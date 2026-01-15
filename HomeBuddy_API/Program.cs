@@ -36,6 +36,11 @@ namespace HomeBuddy_API
                 // Add DbContext
                 var connString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+                if (string.IsNullOrEmpty(connString))
+                {
+                    throw new InvalidOperationException("Connection string 'DefaultConnection' is missing or empty!");
+                }
+
                 builder.Services.AddDbContext<ApplicationDbContext>(options =>
                     options.UseSqlServer(connString));
 
@@ -176,51 +181,15 @@ namespace HomeBuddy_API
                 app.UseSwagger();
                 app.UseSwaggerUI();
 
-                app.UseHttpsRedirection();
+                // Only redirect to HTTPS in Production
+                if (!app.Environment.IsDevelopment())
+                {
+                    app.UseHttpsRedirection();
+                }
+
                 app.UseCors("AllowSpecificOrigins");
-                app.UseAuthentication();
-                app.UseAuthorization();
-                app.MapControllers();
 
-                // Health check endpoint
-                app.MapGet("/health", () => Results.Ok(new
-                {
-                    status = "healthy",
-                    timestamp = DateTime.UtcNow,
-                    environment = app.Environment.EnvironmentName
-                }));
-
-                app.MapGet("/", () => Results.Ok(new
-                {
-                    message = "HomeBuddy API is running",
-                    endpoints = new[] { 
-                        "/api/products",
-                        //"/admin/reset-db",
-                        "/admin/seed-db",
-                    }
-                }));
-
-                //app.MapPost("/admin/reset-db", (IServiceProvider sp) =>
-                //{
-                //    using var scope = sp.CreateScope();
-                //    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-                //    db.Database.EnsureDeleted();
-                //    db.Database.Migrate();
-
-                //    return Results.Ok("Database was reset");
-                //});
-
-                app.MapPost("/admin/seed-db", (IServiceProvider sp) =>
-                {
-                    using var scope = sp.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                    SeedData.EnsureSeeded(db);
-                    return Results.Ok("Database was seeded");
-                });
-
-
-                // Global exception handler
+                // Global exception handler - MUST be early in pipeline
                 app.UseExceptionHandler(builder =>
                 {
                     builder.Run(async context =>
@@ -261,6 +230,47 @@ namespace HomeBuddy_API
 
                         throw ex!;
                     });
+                });
+
+                app.UseAuthentication();
+                app.UseAuthorization();
+                app.MapControllers();
+
+                // Health check endpoint
+                app.MapGet("/health", () => Results.Ok(new
+                {
+                    status = "healthy",
+                    timestamp = DateTime.UtcNow,
+                    environment = app.Environment.EnvironmentName
+                }));
+
+                app.MapGet("/", () => Results.Ok(new
+                {
+                    message = "HomeBuddy API is running",
+                    endpoints = new[] { 
+                        "/api/products",
+                        //"/admin/reset-db",
+                        "/admin/seed-db",
+                    }
+                }));
+
+                //app.MapPost("/admin/reset-db", (IServiceProvider sp) =>
+                //{
+                //    using var scope = sp.CreateScope();
+                //    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                //    db.Database.EnsureDeleted();
+                //    db.Database.Migrate();
+
+                //    return Results.Ok("Database was reset");
+                //});
+
+                app.MapPost("/admin/seed-db", (IServiceProvider sp) =>
+                {
+                    using var scope = sp.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    SeedData.EnsureSeeded(db);
+                    return Results.Ok("Database was seeded");
                 });
 
                 Console.WriteLine("=== Starting App ===");
