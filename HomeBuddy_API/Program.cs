@@ -12,6 +12,7 @@ using HomeBuddy_API.Interfaces.UserInterfaces;
 using HomeBuddy_API.Repositories;
 using HomeBuddy_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -63,7 +64,13 @@ namespace HomeBuddy_API
                 builder.Services.AddScoped<IAdminRepository, AdminRepository>();
                 builder.Services.AddScoped<IAdminService, AdminService>();
 
-                builder.Services.AddControllers();
+                builder.Services.AddControllers()
+                    .AddJsonOptions(options =>
+                    {
+                        // Configure JSON serialization to use camelCase for property names
+                        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+                        options.JsonSerializerOptions.WriteIndented = false;
+                    });
                 builder.Services.AddEndpointsApiExplorer();
 
                 // Swagger with JWT Auth
@@ -164,7 +171,13 @@ namespace HomeBuddy_API
                         {
                             policy.WithOrigins(
                                 "http://localhost:3000",
+                                "http://localhost:3001",
+                                "http://localhost:3002",
+                                "http://127.0.0.1:3000",
+                                "http://127.0.0.1:3001",
+                                "http://localhost:5000",
                                 "https://localhost:7039",
+                                "http://localhost:5077",
                                 "https://homebuddy-react-aedac9f5ckbbfmcm.norwayeast-01.azurewebsites.net"
                             )
                             .AllowAnyHeader()
@@ -271,7 +284,7 @@ namespace HomeBuddy_API
                     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                     SeedData.EnsureSeeded(db);
                     return Results.Ok("Database was seeded");
-                });
+                }).AllowAnonymous();
 
                 Console.WriteLine("=== Starting App ===");
                 app.Run();
