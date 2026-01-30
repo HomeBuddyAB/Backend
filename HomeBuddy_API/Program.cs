@@ -7,6 +7,7 @@ using HomeBuddy_API.Interfaces.AuthInterfaces;
 using HomeBuddy_API.Interfaces.InventoryInterfaces;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using HomeBuddy_API.Interfaces.ProductInterfaces;
+using HomeBuddy_API.Interfaces.TaxInterfaces;
 using HomeBuddy_API.Interfaces.ReviewInterfaces;
 using HomeBuddy_API.Interfaces.UserInterfaces;
 using HomeBuddy_API.Repositories;
@@ -48,6 +49,7 @@ namespace HomeBuddy_API
                 // Dependency Injection for Repositories and Services
                 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
                 builder.Services.AddScoped<IOrderService, OrderService>();
+                builder.Services.AddScoped<ITaxBracketService, TaxBracketServiceImpl>();
                 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
                 builder.Services.AddScoped<IReviewService, ReviewService>();
                 builder.Services.AddScoped<IInventoryService, InventoryService>();

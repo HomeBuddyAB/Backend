@@ -63,8 +63,18 @@ public class OrdersController : ControllerBase
     // Only authenticated users can create orders
     public async Task<IActionResult> CreateOrder([FromBody] OrderCreateDto dto)
     {
-        await _orderService.CreateOrderAsync(dto);
-        return Ok("Order created");
+        if (string.IsNullOrWhiteSpace(dto?.CountryCode))
+            return BadRequest(new { error = "CountryCode is required for checkout. Use GET /api/tax/countries for valid European country codes." });
+
+        try
+        {
+            await _orderService.CreateOrderAsync(dto);
+            return Ok("Order created");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Country") || ex.Message.Contains("country"))
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpPut("{id}")]

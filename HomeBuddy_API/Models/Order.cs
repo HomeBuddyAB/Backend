@@ -21,6 +21,23 @@ namespace HomeBuddy_API.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal Total { get; set; }
 
+        /// <summary>ISO 3166-1 alpha-2 country code of recipient (e.g. DE, FR). Used for VAT.</summary>
+        [Required]
+        [StringLength(2)]
+        public string CountryCode { get; set; } = string.Empty;
+
+        /// <summary>Cart subtotal before tax.</summary>
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal Subtotal { get; set; }
+
+        /// <summary>VAT rate applied (e.g. 19 for 19%).</summary>
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal TaxRate { get; set; }
+
+        /// <summary>VAT amount added to subtotal.</summary>
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal TaxAmount { get; set; }
+
         [Required]
         [StringLength(20)]
         public string Status { get; set; } = "Pending"; // e.g. Pending, Paid, Shipped, Cancelled

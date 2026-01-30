@@ -4,6 +4,7 @@ using HomeBuddy_API.Interfaces;
 using HomeBuddy_API.Interfaces.InventoryInterfaces;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using HomeBuddy_API.Interfaces.ProductInterfaces;
+using HomeBuddy_API.Interfaces.TaxInterfaces;
 using HomeBuddy_API.Models;
 using HomeBuddy_API.Services;
 using Moq;
@@ -16,6 +17,7 @@ namespace HomeBuddy_API.Tests.Services
         private readonly Mock<IOrderRepository> _orderRepoMock;
         private readonly Mock<IInventoryService> _inventoryServiceMock;
         private readonly Mock<IVariantRepository> _variantRepoMock;
+        private readonly Mock<ITaxBracketService> _taxServiceMock;
         private readonly Mock<IUnitOfWork> _uowMock;
         private readonly OrderService _service;
 
@@ -24,7 +26,11 @@ namespace HomeBuddy_API.Tests.Services
             _orderRepoMock = new Mock<IOrderRepository>();
             _inventoryServiceMock = new Mock<IInventoryService>();
             _variantRepoMock = new Mock<IVariantRepository>();
+            _taxServiceMock = new Mock<ITaxBracketService>();
             _uowMock = new Mock<IUnitOfWork>();
+
+            // Default: Germany 19% VAT
+            _taxServiceMock.Setup(t => t.GetVatRate(It.IsAny<string>())).Returns(19m);
 
             // Setup UnitOfWork to execute the action immediately
             _uowMock.Setup(u => u.ExecuteInTransactionAsync(
@@ -36,6 +42,7 @@ namespace HomeBuddy_API.Tests.Services
                 _orderRepoMock.Object,
                 _inventoryServiceMock.Object,
                 _variantRepoMock.Object,
+                _taxServiceMock.Object,
                 _uowMock.Object);
         }
 
@@ -131,13 +138,14 @@ namespace HomeBuddy_API.Tests.Services
         }
 
         [Fact]
-        // Tests that CreateOrderAsync generates order number and creates order
+        // Tests that CreateOrderAsync generates order number and creates order with tax
         public async Task CreateOrderAsync_ShouldCreateOrderWithGeneratedOrderNo()
         {
             var variantId = Guid.NewGuid();
             var dto = new OrderCreateDto
             {
                 Email = "test@example.com",
+                CountryCode = "DE",
                 Items = new List<OrderItemDto>
                 {
                     new OrderItemDto { Sku = "TEST-SKU-001", Quantity = 2 }
@@ -149,10 +157,15 @@ namespace HomeBuddy_API.Tests.Services
 
             await _service.CreateOrderAsync(dto);
 
+            // Subtotal 100, 19% VAT = 19, Total = 119
             _orderRepoMock.Verify(r => r.CreateAsync(It.Is<Order>(o =>
                 o.Email == "test@example.com" &&
+                o.CountryCode == "DE" &&
+                o.Subtotal == 100m &&
+                o.TaxRate == 19m &&
+                o.TaxAmount == 19m &&
+                o.Total == 119m &&
                 o.Status == "Pending" &&
-                o.Total == 100m &&
                 o.OrderNo.StartsWith("ORD-") &&
                 o.Items.Count == 1
             )), Times.Once);
@@ -173,6 +186,7 @@ namespace HomeBuddy_API.Tests.Services
             var dto = new OrderCreateDto
             {
                 Email = "test@example.com",
+                CountryCode = "DE",
                 Items = new List<OrderItemDto>
                 {
                     new OrderItemDto { Sku = "INVALID-SKU", Quantity = 1 }
@@ -183,6 +197,25 @@ namespace HomeBuddy_API.Tests.Services
                 .ReturnsAsync((Variant?)null);
 
             await Assert.ThrowsAsync<NotFoundException>(() => _service.CreateOrderAsync(dto));
+        }
+
+        [Fact]
+        // Tests that CreateOrderAsync throws when country is not supported
+        public async Task CreateOrderAsync_ShouldThrow_WhenCountryNotSupported()
+        {
+            _taxServiceMock.Setup(t => t.GetVatRate("XX")).Returns((decimal?)null);
+
+            var dto = new OrderCreateDto
+            {
+                Email = "test@example.com",
+                CountryCode = "XX",
+                Items = new List<OrderItemDto>
+                {
+                    new OrderItemDto { Sku = "TEST-SKU", Quantity = 1 }
+                }
+            };
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _service.CreateOrderAsync(dto));
         }
 
         [Fact]

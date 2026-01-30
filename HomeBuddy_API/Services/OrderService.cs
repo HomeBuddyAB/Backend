@@ -1,9 +1,10 @@
-﻿using HomeBuddy_API.DTOs.Requests.OrderDTOs;
+using HomeBuddy_API.DTOs.Requests.OrderDTOs;
 using HomeBuddy_API.Exceptions;
 using HomeBuddy_API.Interfaces;
 using HomeBuddy_API.Interfaces.InventoryInterfaces;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using HomeBuddy_API.Interfaces.ProductInterfaces;
+using HomeBuddy_API.Interfaces.TaxInterfaces;
 using HomeBuddy_API.Models;
 
 namespace HomeBuddy_API.Services
@@ -13,17 +14,20 @@ namespace HomeBuddy_API.Services
         private readonly IOrderRepository _orderRepo;
         private readonly IInventoryService _inventoryService;
         private readonly IVariantRepository _variantRepository;
+        private readonly ITaxBracketService _taxService;
         private readonly IUnitOfWork _uow;
 
         public OrderService(
             IOrderRepository orderRepo,
             IInventoryService inventoryService,
             IVariantRepository variantRepository,
+            ITaxBracketService taxService,
             IUnitOfWork uow)
         {
             _orderRepo = orderRepo;
             _inventoryService = inventoryService;
             _variantRepository = variantRepository;
+            _taxService = taxService;
             _uow = uow;
         }
 
@@ -54,11 +58,19 @@ namespace HomeBuddy_API.Services
 
         public async Task CreateOrderAsync(OrderCreateDto dto)
         {
+            var countryCode = (dto.CountryCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(countryCode))
+                throw new InvalidOperationException("CountryCode is required for checkout.");
+
+            var vatRate = _taxService.GetVatRate(countryCode);
+            if (vatRate == null)
+                throw new InvalidOperationException($"Country '{countryCode}' is not supported. Use GET /api/tax/countries for valid European country codes.");
+
             // Generate a unique order number and trim to 45 characters.
             var orderNo = $"ORD-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
             orderNo = orderNo[..Math.Min(45, orderNo.Length)];
 
-            decimal total = 0m;
+            decimal subtotal = 0m;
             var orderItems = new List<OrderItem>();
 
             await _uow.ExecuteInTransactionAsync(async ct =>
@@ -76,7 +88,7 @@ namespace HomeBuddy_API.Services
 
                     // Price
                     var unitPrice = variant.Price;
-                    total += unitPrice * item.Quantity;
+                    subtotal += unitPrice * item.Quantity;
 
                     // Decrement inventory and record a sale transaction using VariantId (no redundant SKU lookup).
                     await _inventoryService.AdjustInventoryAsync(
@@ -95,12 +107,19 @@ namespace HomeBuddy_API.Services
                     });
                 }
 
+                var taxAmount = Math.Round(subtotal * (vatRate.Value / 100m), 2, MidpointRounding.AwayFromZero);
+                var total = subtotal + taxAmount;
+
                 var order = new Order
                 {
                     OrderNo = orderNo,
                     Email = dto.Email,
-                    Status = "Pending",
+                    CountryCode = countryCode,
+                    Subtotal = subtotal,
+                    TaxRate = vatRate.Value,
+                    TaxAmount = taxAmount,
                     Total = total,
+                    Status = "Pending",
                     CreatedUtc = DateTime.UtcNow,
                     Items = orderItems
                 };
