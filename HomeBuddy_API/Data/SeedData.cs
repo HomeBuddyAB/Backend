@@ -42,13 +42,14 @@ public static class SeedData
             db.SaveChanges();
         }
 
-        // Seed Categories
-        if (!db.Categories.Any()){
+        // Seed Categories (HomeBuddy IKEA-like home improvement store)
+        if (!db.Categories.Any())
+        {
             db.Categories.AddRange(
-                new Category { Name = "Tops", Slug = "tops" },
-                new Category { Name = "Bottoms", Slug = "bottoms" },
-                new Category { Name = "Shoes", Slug = "shoes" },
-                new Category { Name = "Accessories", Slug = "accessories" }
+                new Category { Name = "Furniture", Slug = "furniture" },
+                new Category { Name = "Materials", Slug = "materials" },
+                new Category { Name = "Power Tools", Slug = "power-tools" },
+                new Category { Name = "Lighting", Slug = "lighting" }
             );
             db.SaveChanges();
         }
