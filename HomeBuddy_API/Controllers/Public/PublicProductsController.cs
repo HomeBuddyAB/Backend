@@ -30,6 +30,17 @@ public class PublicProductsController : ControllerBase
             .Include(v => v.VariantImages)
             .Where(v => !v.IsDeleted && !v.ProductGroup.IsDeleted);
 
+        if (!string.IsNullOrWhiteSpace(q.Search))
+        {
+            var term = q.Search.Trim().ToLower();
+            variants = variants.Where(v =>
+                (v.ProductGroup.Name != null && v.ProductGroup.Name.ToLower().Contains(term)) ||
+                (v.ProductGroup.Category != null && v.ProductGroup.Category.Name != null && v.ProductGroup.Category.Name.ToLower().Contains(term)) ||
+                (v.ProductGroup.Slug != null && v.ProductGroup.Slug.ToLower().Contains(term)) ||
+                (v.Sku != null && v.Sku.ToLower().Contains(term)) ||
+                (v.Color != null && v.Color.ToLower().Contains(term)));
+        }
+
         if (!string.IsNullOrWhiteSpace(q.CategorySlug))
             variants = variants.Where(v => v.ProductGroup.Category.Slug == q.CategorySlug);
 

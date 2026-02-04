@@ -2,6 +2,8 @@
 namespace HomeBuddy_API.DTOs.Requests;
 public class PublicListQuery
 {
+    /// <summary>Optional search term; filters by product name, category, slug, SKU, or color.</summary>
+    public string? Search { get; set; }
     public string? CategorySlug { get; set; }
     public string? Color { get; set; }
     public string? Size { get; set; }
