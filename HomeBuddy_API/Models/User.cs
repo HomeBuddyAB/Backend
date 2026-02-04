@@ -16,7 +16,6 @@ namespace HomeBuddy_API.Models
         [Required]
         public required string PasswordSalt { get; set; }
 
-        [MaxLength(255)]
         public string Cart { get; set; } = "{}";
     }
 }

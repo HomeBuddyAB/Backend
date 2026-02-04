@@ -1,4 +1,4 @@
-﻿using HomeBuddy_API.DTOs.Requests.Auth;
+using HomeBuddy_API.DTOs.Requests.Auth;
 using HomeBuddy_API.Interfaces.AuthInterfaces;
 using HomeBuddy_API.Models;
 using Microsoft.Extensions.Configuration;
@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace HomeBuddy_API.Services
 {
@@ -30,11 +31,14 @@ namespace HomeBuddy_API.Services
 
             CreatePasswordHash(dto.Password, out string hash, out string salt);
 
+            var mergedCart = MergeCarts("{}", dto.GuestCart);
+
             var user = new User
             {
                 Email = dto.Email,
                 PasswordHash = hash,
-                PasswordSalt = salt
+                PasswordSalt = salt,
+                Cart = mergedCart
             };
 
             await _authRepo.AddUserAsync(user);
@@ -43,7 +47,8 @@ namespace HomeBuddy_API.Services
             return new AuthResponseDto
             {
                 Email = user.Email,
-                Token = GenerateJwtToken(user.Email, user.Id, "User")
+                Token = GenerateJwtToken(user.Email, user.Id, "User"),
+                Cart = mergedCart
             };
         }
 
@@ -54,10 +59,18 @@ namespace HomeBuddy_API.Services
             if (user == null || !VerifyPassword(dto.Password, user.PasswordHash, user.PasswordSalt))
                 throw new Exception("Invalid credentials");
 
+            var mergedCart = MergeCarts(user.Cart ?? "{}", dto.GuestCart);
+            if (mergedCart != (user.Cart ?? "{}"))
+            {
+                user.Cart = mergedCart;
+                await _authRepo.SaveChangesAsync();
+            }
+
             return new AuthResponseDto
             {
                 Email = user.Email,
-                Token = GenerateJwtToken(user.Email, user.Id, "User")
+                Token = GenerateJwtToken(user.Email, user.Id, "User"),
+                Cart = mergedCart
             };
         }
 
@@ -87,6 +100,62 @@ namespace HomeBuddy_API.Services
             using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
             var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
             return Convert.ToBase64String(computedHash) == storedHash;
+        }
+
+        /// <summary>Merges guest cart into user cart by SKU. Same SKU: add quantities. Expects {"items":[{"sku":"...","quantity":n}]} or {"items":[{"sku":"...","qty":n}]}.</summary>
+        private static string MergeCarts(string userCartJson, string? guestCartJson)
+        {
+            var merged = ParseCartToDict(userCartJson);
+            if (string.IsNullOrWhiteSpace(guestCartJson))
+                return SerializeCart(merged);
+
+            var guestItems = ParseCartToDict(guestCartJson);
+            foreach (var (sku, qty) in guestItems)
+            {
+                var key = NormalizeSku(sku);
+                if (string.IsNullOrEmpty(key)) continue;
+                merged[key] = merged.GetValueOrDefault(key, 0) + Math.Max(0, qty);
+            }
+
+            return SerializeCart(merged);
+        }
+
+        private static Dictionary<string, int> ParseCartToDict(string json)
+        {
+            var dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                    return dict;
+
+                foreach (var item in items.EnumerateArray())
+                {
+                    var sku = item.TryGetProperty("sku", out var s) ? s.GetString() : null;
+                    var qty = 0;
+                    if (item.TryGetProperty("quantity", out var q)) qty = q.TryGetInt32(out var qi) ? qi : 0;
+                    else if (item.TryGetProperty("qty", out var q2)) qty = q2.TryGetInt32(out var qi2) ? qi2 : 0;
+
+                    var key = NormalizeSku(sku);
+                    if (string.IsNullOrEmpty(key)) continue;
+                    dict[key] = dict.GetValueOrDefault(key, 0) + Math.Max(0, qty);
+                }
+            }
+            catch { /* invalid JSON: return empty or parsed so far */ }
+            return dict;
+        }
+
+        private static string NormalizeSku(string? sku) =>
+            string.IsNullOrWhiteSpace(sku) ? "" : sku.Trim().ToUpperInvariant();
+
+        private static string SerializeCart(Dictionary<string, int> items)
+        {
+            var arr = items
+                .Where(kv => kv.Value > 0)
+                .Select(kv => new { sku = kv.Key, quantity = kv.Value })
+                .ToList();
+            return JsonSerializer.Serialize(new { items = arr });
         }
 
         private string GenerateJwtToken(string email, int id, string role)
