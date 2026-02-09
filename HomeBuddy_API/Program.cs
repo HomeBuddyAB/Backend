@@ -15,11 +15,13 @@ using HomeBuddy_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 
 namespace HomeBuddy_API
 {
@@ -145,6 +147,57 @@ namespace HomeBuddy_API
 
                 builder.Services.AddAuthorization();
 
+                // Rate limiting configuration
+                builder.Services.AddRateLimiter(options =>
+                {
+                    // Default status code for rejected requests
+                    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+                    // Consistent JSON body for rate-limited responses
+                    options.OnRejected = async (context, token) =>
+                    {
+                        context.HttpContext.Response.ContentType = "application/json";
+                        var payload = new
+                        {
+                            error = "TooManyRequests",
+                            message = "Too many requests. Please try again later."
+                        };
+                        await context.HttpContext.Response.WriteAsync(JsonSerializer.Serialize(payload), token);
+                    };
+
+                    // Global per-client limiter (identified by IP)
+                    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                    {
+                        var clientId = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+                        return RateLimitPartition.GetFixedWindowLimiter(
+                            clientId,
+                            _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = 100,
+                                Window = TimeSpan.FromMinutes(1),
+                                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                                QueueLimit = 0
+                            });
+                    });
+
+                    // Stricter policy for authentication endpoints (e.g., login/register)
+                    options.AddPolicy("auth", httpContext =>
+                    {
+                        var clientId = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+                        return RateLimitPartition.GetFixedWindowLimiter(
+                            clientId,
+                            _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = 5,
+                                Window = TimeSpan.FromMinutes(1),
+                                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                                QueueLimit = 0
+                            });
+                    });
+                });
+
                 // Azure OpenAI - Optional
                 //string? endpoint = builder.Configuration["AZURE_OPENAI_ENDPOINT"];
                 //string? apiKey = builder.Configuration["AZURE_OPENAI_KEY"];
@@ -246,6 +299,8 @@ namespace HomeBuddy_API
                         throw ex!;
                     });
                 });
+
+                app.UseRateLimiter();
 
                 app.UseAuthentication();
                 app.UseAuthorization();

@@ -19,9 +19,9 @@ public class PublicProductsController : ControllerBase
         _links = links;
     }
 
-    // SKU-first listing
+    // SKU-first listing (returns paged body with totalCount for UI pagination)
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<DTOs.Responses.SkuListItemResponse>), 200)]
+    [ProducesResponseType(typeof(DTOs.Responses.ProductListPageResponse), 200)]
     public async Task<IActionResult> List([FromQuery] PublicListQuery q, CancellationToken ct)
     {
         var variants = _db.Variants
@@ -107,7 +107,16 @@ public class PublicProductsController : ControllerBase
             });
         }
 
+        var totalPages = (int)Math.Ceiling(total / (double)pageSize);
+        var result = new DTOs.Responses.ProductListPageResponse
+        {
+            Items = responses,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
+        };
         Response.Headers["X-Total-Count"] = total.ToString();
-        return Ok(responses);
+        return Ok(result);
     }
 }

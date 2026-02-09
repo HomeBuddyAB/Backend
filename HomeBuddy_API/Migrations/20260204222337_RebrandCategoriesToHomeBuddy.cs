@@ -10,7 +10,7 @@ namespace HomeBuddy_API.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Update existing clothing categories to HomeBuddy IKEA-like categories
+            // Update existing clothing categories to HomeBuddy categories
             // Tops -> Furniture, Bottoms -> Materials, Shoes -> Power Tools, Accessories -> Lighting
             migrationBuilder.Sql(@"
                 UPDATE Categories SET Name = 'Furniture', Slug = 'furniture' WHERE Slug = 'tops';

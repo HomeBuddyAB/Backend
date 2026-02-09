@@ -1,6 +1,7 @@
 using HomeBuddy_API.DTOs.Requests.Auth;
 using HomeBuddy_API.Interfaces.AuthInterfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HomeBuddy_API.Controllers
 {
@@ -15,6 +16,7 @@ namespace HomeBuddy_API.Controllers
             _authService = authService;
         }
 
+        [EnableRateLimiting("auth")]
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
@@ -29,6 +31,7 @@ namespace HomeBuddy_API.Controllers
             }
         }
 
+        [EnableRateLimiting("auth")]
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto dto)
         {
@@ -43,6 +46,7 @@ namespace HomeBuddy_API.Controllers
             }
         }
 
+        [EnableRateLimiting("auth")]
         [HttpPost("admin/login")]
         public async Task<IActionResult> LoginAdmin([FromBody] AdminLoginDto dto)
         {
