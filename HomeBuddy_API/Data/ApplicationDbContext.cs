@@ -1,4 +1,4 @@
-﻿using HomeBuddy_API.Models;
+using HomeBuddy_API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -26,7 +26,7 @@ namespace HomeBuddy_API.Data
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; } = default!;
         public DbSet<ColorImage> ColorImages => Set<ColorImage>();
         public DbSet<VariantImage> VariantImages => Set<VariantImage>();
-
+        public DbSet<SavedCustomer> SavedCustomers { get; set; } = default!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -118,7 +118,11 @@ namespace HomeBuddy_API.Data
                 .HasForeignKey<Inventory>(i => i.VariantId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // ...other model config
+            modelBuilder.Entity<SavedCustomer>()
+                .HasOne(sc => sc.User)
+                .WithMany()
+                .HasForeignKey(sc => sc.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }
