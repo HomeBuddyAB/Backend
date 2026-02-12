@@ -56,7 +56,7 @@ namespace HomeBuddy_API.Services
             return await _orderRepo.GetOrderByOrderNoAsync(orderNo);
         }
 
-        public async Task CreateOrderAsync(OrderCreateDto dto)
+        public async Task<string> CreateOrderAsync(OrderCreateDto dto, int? userId = null)
         {
             var countryCode = (dto.CountryCode ?? string.Empty).Trim().ToUpperInvariant();
             if (string.IsNullOrEmpty(countryCode))
@@ -113,6 +113,7 @@ namespace HomeBuddy_API.Services
                 var order = new Order
                 {
                     OrderNo = orderNo,
+                    UserId = userId,
                     Email = dto.Email,
                     CountryCode = countryCode,
                     Subtotal = subtotal,
@@ -129,6 +130,28 @@ namespace HomeBuddy_API.Services
                 // Single commit for both inventory + order
                 await _uow.SaveChangesAsync(ct);
             });
+
+            return orderNo;
+        }
+
+        public async Task ClaimOrderAsync(string orderNo, int userId, string userEmail)
+        {
+            if (string.IsNullOrWhiteSpace(orderNo))
+                throw new InvalidOperationException("Order number is required.");
+
+            var order = await _orderRepo.GetOrderByOrderNoAsync(orderNo.Trim());
+            if (order == null)
+                throw new KeyNotFoundException("Order not found.");
+
+            if (order.UserId != null)
+                throw new InvalidOperationException("Order is already linked to an account.");
+
+            if (!string.Equals(order.Email?.Trim(), userEmail?.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Order can only be linked to an account with the same email address.");
+
+            order.UserId = userId;
+            await _orderRepo.UpdateAsync(order);
+            await _uow.SaveChangesAsync();
         }
 
         public async Task UpdateOrderAsync(int id, OrderUpdateDto dto)

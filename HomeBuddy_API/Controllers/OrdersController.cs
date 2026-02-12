@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using HomeBuddy_API.DTOs.Requests.OrderDTOs;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -14,6 +15,14 @@ public class OrdersController : ControllerBase
     {
         _orderService = orderService;
     }
+
+    private int? GetUserIdIfAuthenticated()
+    {
+        var id = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(id, out var uid) ? uid : null;
+    }
+
+    private string? GetUserEmail() => User.FindFirstValue(ClaimTypes.Email);
 
     [HttpGet("{id}")]
     // Only authenticated users can see a specific order
@@ -60,7 +69,7 @@ public class OrdersController : ControllerBase
     }
 
     [HttpPost]
-    // Only authenticated users can create orders
+    [AllowAnonymous]
     public async Task<IActionResult> CreateOrder([FromBody] OrderCreateDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto?.CountryCode))
@@ -68,10 +77,37 @@ public class OrdersController : ControllerBase
 
         try
         {
-            await _orderService.CreateOrderAsync(dto);
-            return Ok("Order created");
+            var userId = GetUserIdIfAuthenticated();
+            var orderNo = await _orderService.CreateOrderAsync(dto, userId);
+            return Ok(new { orderNo });
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Country") || ex.Message.Contains("country"))
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("claim")]
+    public async Task<IActionResult> ClaimOrder([FromBody] ClaimOrderRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request?.OrderNo))
+            return BadRequest(new { error = "Order number is required." });
+
+        var userId = GetUserIdIfAuthenticated();
+        var email = GetUserEmail();
+        if (userId == null || string.IsNullOrEmpty(email))
+            return Unauthorized();
+
+        try
+        {
+            await _orderService.ClaimOrderAsync(request.OrderNo.Trim(), userId.Value, email);
+            return Ok(new { message = "Order linked to your account." });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new { error = "Order not found." });
+        }
+        catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }

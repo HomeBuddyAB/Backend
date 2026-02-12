@@ -10,7 +10,9 @@ namespace HomeBuddy_API.Interfaces.OrderInterfaces
         Task<Order?> GetOrderByOrderNoAsync(string orderNr);
         Task<IEnumerable<Order>> GetAllOrdersAsync(int page);
         Task<int> GetOrdersCountAsync();
-        Task CreateOrderAsync(OrderCreateDto dto);
+        Task<string> CreateOrderAsync(OrderCreateDto dto, int? userId = null);
+        /// <summary>Link an existing order (by order number) to the current user. Order email must match user email.</summary>
+        Task ClaimOrderAsync(string orderNo, int userId, string userEmail);
         Task UpdateOrderAsync(int id, OrderUpdateDto dto);
         Task DeleteOrderAsync(int id);
     }
