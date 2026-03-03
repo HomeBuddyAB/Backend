@@ -27,6 +27,7 @@ namespace HomeBuddy_API.Data
         public DbSet<ColorImage> ColorImages => Set<ColorImage>();
         public DbSet<VariantImage> VariantImages => Set<VariantImage>();
         public DbSet<SavedCustomer> SavedCustomers { get; set; } = default!;
+        public DbSet<UserFavorite> UserFavorites { get; set; } = default!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -123,6 +124,23 @@ namespace HomeBuddy_API.Data
                 .WithMany()
                 .HasForeignKey(sc => sc.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserFavorite>()
+                .HasOne(uf => uf.User)
+                .WithMany()
+                .HasForeignKey(uf => uf.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserFavorite>()
+                .HasOne(uf => uf.Variant)
+                .WithMany()
+                .HasForeignKey(uf => uf.VariantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserFavorite>()
+                .HasIndex(uf => new { uf.UserId, uf.VariantId })
+                .IsUnique()
+                .HasDatabaseName("IX_UserFavorite_UserId_VariantId");
         }
     }
 }
