@@ -47,7 +47,7 @@ namespace HomeBuddy_API.Controllers
         }
 
         [EnableRateLimiting("auth")]
-        [HttpPost("admin/login")]
+         [HttpPost("admin/login")]
         public async Task<IActionResult> LoginAdmin([FromBody] AdminLoginDto dto)
         {
             try
