@@ -258,15 +258,21 @@ namespace HomeBuddy_API
                 app.UseCors("AllowSpecificOrigins");
 
                 // Global exception handler - MUST be early in pipeline
-                app.UseExceptionHandler(builder =>
+                app.UseExceptionHandler(handlerApp =>
                 {
-                    builder.Run(async context =>
+                    handlerApp.Run(async context =>
                     {
                         var feature = context.Features.Get<IExceptionHandlerFeature>();
                         var ex = feature?.Error;
+                        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
 
                         if (ex is NotFoundException nfe)
                         {
+                            logger.LogWarning(ex, "NotFound: {Resource} {Identifier} on {Path}",
+                                nfe.Resource,
+                                nfe.Identifier,
+                                context.Request.Path);
+
                             context.Response.StatusCode = StatusCodes.Status404NotFound;
                             context.Response.ContentType = "application/json";
                             var payload = new
@@ -282,6 +288,12 @@ namespace HomeBuddy_API
 
                         if (ex is InsufficientStockException ise)
                         {
+                            logger.LogWarning(ex, "InsufficientStock for {SkuOrVariant} (requested {Requested}, available {Available}) on {Path}",
+                                ise.SkuOrVariantId,
+                                ise.Requested,
+                                ise.Available,
+                                context.Request.Path);
+
                             context.Response.StatusCode = StatusCodes.Status409Conflict;
                             context.Response.ContentType = "application/json";
                             var payload = new
@@ -294,6 +306,11 @@ namespace HomeBuddy_API
                             };
                             await context.Response.WriteAsync(JsonSerializer.Serialize(payload));
                             return;
+                        }
+
+                        if (ex != null)
+                        {
+                            logger.LogError(ex, "Unhandled exception while processing {Path}", context.Request.Path);
                         }
 
                         throw ex!;

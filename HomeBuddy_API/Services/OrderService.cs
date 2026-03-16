@@ -16,19 +16,22 @@ namespace HomeBuddy_API.Services
         private readonly IVariantRepository _variantRepository;
         private readonly ITaxBracketService _taxService;
         private readonly IUnitOfWork _uow;
+        private readonly ILogger<OrderService> _logger;
 
         public OrderService(
             IOrderRepository orderRepo,
             IInventoryService inventoryService,
             IVariantRepository variantRepository,
             ITaxBracketService taxService,
-            IUnitOfWork uow)
+            IUnitOfWork uow,
+            ILogger<OrderService> logger)
         {
             _orderRepo = orderRepo;
             _inventoryService = inventoryService;
             _variantRepository = variantRepository;
             _taxService = taxService;
             _uow = uow;
+            _logger = logger;
         }
 
         public async Task<IEnumerable<Order>> GetAllOrdersAsync(int page)
@@ -131,6 +134,15 @@ namespace HomeBuddy_API.Services
                 await _uow.SaveChangesAsync(ct);
             });
 
+            _logger.LogInformation(
+                "Order {OrderNo} created for {Email} (UserId: {UserId}) with subtotal {Subtotal} and total {Total} in country {CountryCode}",
+                orderNo,
+                dto.Email,
+                userId,
+                subtotal,
+                subtotal + Math.Round(subtotal * (vatRate.Value / 100m), 2, MidpointRounding.AwayFromZero),
+                countryCode);
+
             return orderNo;
         }
 
@@ -141,17 +153,34 @@ namespace HomeBuddy_API.Services
 
             var order = await _orderRepo.GetOrderByOrderNoAsync(orderNo.Trim());
             if (order == null)
+            {
+                _logger.LogWarning("Claim order failed: order not found. OrderNo={OrderNo}, UserId={UserId}", orderNo, userId);
                 throw new KeyNotFoundException("Order not found.");
+            }
 
             if (order.UserId != null)
+            {
+                _logger.LogWarning("Claim order failed: order already linked to a user. OrderNo={OrderNo}, UserId={ExistingUserId}, RequestUserId={UserId}",
+                    orderNo,
+                    order.UserId,
+                    userId);
                 throw new InvalidOperationException("Order is already linked to an account.");
+            }
 
             if (!string.Equals(order.Email?.Trim(), userEmail?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Claim order failed: email mismatch for OrderNo={OrderNo}. OrderEmail={OrderEmail}, RequestEmail={RequestEmail}",
+                    orderNo,
+                    order.Email,
+                    userEmail);
                 throw new InvalidOperationException("Order can only be linked to an account with the same email address.");
+            }
 
             order.UserId = userId;
             await _orderRepo.UpdateAsync(order);
             await _uow.SaveChangesAsync();
+
+            _logger.LogInformation("Order {OrderNo} successfully linked to user {UserId}", orderNo, userId);
         }
 
         public async Task UpdateOrderAsync(int id, OrderUpdateDto dto)
@@ -191,6 +220,11 @@ namespace HomeBuddy_API.Services
                 await _orderRepo.UpdateAsync(existingOrder);
                 await _uow.SaveChangesAsync(ct);
             });
+
+            _logger.LogInformation("Order {OrderId} updated. New status={Status}, New total={Total}",
+                id,
+                dto.Status ?? "(unchanged)",
+                dto.Total ?? 0m);
         }
 
         public async Task DeleteOrderAsync(int id)
@@ -222,6 +256,8 @@ namespace HomeBuddy_API.Services
                 await _orderRepo.DeleteAsync(id);
                 await _uow.SaveChangesAsync(ct);
             });
+
+            _logger.LogInformation("Order {OrderId} deleted", id);
         }
     }
 }

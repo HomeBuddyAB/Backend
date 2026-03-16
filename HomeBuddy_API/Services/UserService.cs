@@ -1,4 +1,4 @@
-﻿using HomeBuddy_API.DTOs.Requests.AdminDashDTOs;
+using HomeBuddy_API.DTOs.Requests.AdminDashDTOs;
 using HomeBuddy_API.DTOs.Requests.User;
 using HomeBuddy_API.DTOs.Responses;
 using HomeBuddy_API.Interfaces.UserInterfaces;
@@ -11,10 +11,12 @@ namespace HomeBuddy_API.Services
     public class UserService : IUserService
     {
         private readonly IUserRepository _userRepository;
+        private readonly ILogger<UserService> _logger;
 
-        public UserService(IUserRepository userRepository)
+        public UserService(IUserRepository userRepository, ILogger<UserService> logger)
         {
             _userRepository = userRepository;
+            _logger = logger;
         }
 
         // Admin functions
@@ -41,6 +43,10 @@ namespace HomeBuddy_API.Services
             }
 
             await _userRepository.UpdateAsync(existing);
+            _logger.LogInformation("Admin updated user {UserId}. Email changed={EmailChanged}, Password changed={PasswordChanged}",
+                id,
+                updatedUser.Email != null,
+                updatedUser.NewPassword != null);
         }
 
         public async Task DeleteUserAsync(int id)
@@ -48,6 +54,7 @@ namespace HomeBuddy_API.Services
             var existing = await _userRepository.GetByIdFullAsync(id);
             if (existing == null) throw new Exception("User not found");
             await _userRepository.DeleteAsync(existing);
+            _logger.LogInformation("Admin deleted user {UserId}", id);
         }
 
         // profile functions
@@ -72,6 +79,10 @@ namespace HomeBuddy_API.Services
             }
 
             await _userRepository.UpdateAsync(user);
+            _logger.LogInformation("User {UserId} updated own profile. Email changed={EmailChanged}, Password changed={PasswordChanged}",
+                id,
+                dto.Email != null && !dto.Email.Equals(user.Email, StringComparison.OrdinalIgnoreCase),
+                !string.IsNullOrEmpty(dto.CurrentPassword) && !string.IsNullOrEmpty(dto.NewPassword));
         }
 
         public async Task DeleteOwnAccountAsync(int id, UserDeleteDto dto)
@@ -83,6 +94,7 @@ namespace HomeBuddy_API.Services
                 throw new Exception("Incorrect password");
 
             await _userRepository.DeleteAsync(user);
+            _logger.LogInformation("User {UserId} deleted own account", id);
         }
 
         // verification and hashing

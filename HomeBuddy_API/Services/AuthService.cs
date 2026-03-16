@@ -15,11 +15,13 @@ namespace HomeBuddy_API.Services
     {
         private readonly IAuthRepository _authRepo;
         private readonly IConfiguration _config;
+        private readonly ILogger<AuthService> _logger;
 
-        public AuthService(IAuthRepository authRepo, IConfiguration config)
+        public AuthService(IAuthRepository authRepo, IConfiguration config, ILogger<AuthService> logger)
         {
             _authRepo = authRepo;
             _config = config;
+            _logger = logger;
         }
 
         // User Registration
@@ -27,7 +29,10 @@ namespace HomeBuddy_API.Services
         {
             var existingUser = await _authRepo.GetUserByEmailAsync(dto.Email);
             if (existingUser != null)
+            {
+                _logger.LogWarning("Registration failed: email already registered for {Email}", dto.Email);
                 throw new Exception("Email already registered");
+            }
 
             CreatePasswordHash(dto.Password, out string hash, out string salt);
 
@@ -44,6 +49,8 @@ namespace HomeBuddy_API.Services
             await _authRepo.AddUserAsync(user);
             await _authRepo.SaveChangesAsync();
 
+            _logger.LogInformation("User registered successfully with id {UserId} and email {Email}", user.Id, user.Email);
+
             return new AuthResponseDto
             {
                 Email = user.Email,
@@ -57,7 +64,10 @@ namespace HomeBuddy_API.Services
         {
             var user = await _authRepo.GetUserByEmailAsync(dto.Email);
             if (user == null || !VerifyPassword(dto.Password, user.PasswordHash, user.PasswordSalt))
+            {
+                _logger.LogWarning("Login failed for {Email}: invalid credentials", dto.Email);
                 throw new Exception("Invalid credentials");
+            }
 
             var mergedCart = MergeCarts(user.Cart ?? "{}", dto.GuestCart);
             if (mergedCart != (user.Cart ?? "{}"))
@@ -65,6 +75,8 @@ namespace HomeBuddy_API.Services
                 user.Cart = mergedCart;
                 await _authRepo.SaveChangesAsync();
             }
+
+            _logger.LogInformation("User logged in successfully: {Email}", user.Email);
 
             return new AuthResponseDto
             {
@@ -79,7 +91,10 @@ namespace HomeBuddy_API.Services
         {
             var admin = await _authRepo.GetAdminByUserNameAsync(dto.UserName);
             if (admin == null || !VerifyPassword(dto.Password, admin.PasswordHash, admin.PasswordSalt))
+            {
+                _logger.LogWarning("Admin login failed for {UserName}: invalid credentials", dto.UserName);
                 throw new Exception("Invalid admin credentials");
+            }
 
             return new AuthResponseDto
             {
