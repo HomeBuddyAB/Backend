@@ -20,6 +20,13 @@ namespace HomeBuddy_API.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal Price { get; set; }
 
+        /// <summary>
+        /// Optional original list price before any discount.
+        /// When set higher than <see cref="Price"/>, the variant is considered discounted.
+        /// </summary>
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? ListPrice { get; set; }
+
         [MaxLength(1000)]
         public string? Description { get; set; }
 

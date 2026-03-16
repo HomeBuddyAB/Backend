@@ -41,7 +41,8 @@ namespace HomeBuddy_API.Controllers.Admin
                         Id = g.Category.Id,
                         Name = g.Category.Name,
                         Slug = g.Category.Slug
-                    }
+                    },
+                    HasDiscount = g.Variants.Any(v => v.ListPrice != null && v.ListPrice > v.Price)
                 })
                 .ToListAsync(ct);
 
@@ -127,6 +128,54 @@ namespace HomeBuddy_API.Controllers.Admin
         DELETE FROM ProductGroups WHERE Id = {0}
     ", id);
 
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Apply a percentage discount to all variants in the product group.
+        /// Sets ListPrice = current Price (original), then Price = Price * (1 - DiscountPercent/100).
+        /// </summary>
+        [HttpPost("{id:guid}/discount")]
+        public async Task<IActionResult> ApplyDiscount(Guid id, [FromBody] ApplyGroupDiscountRequest req, CancellationToken ct = default)
+        {
+            if (req.DiscountPercent < 1 || req.DiscountPercent > 99)
+                return BadRequest("DiscountPercent must be between 1 and 99.");
+
+            var group = await _db.ProductGroups.FindAsync(new object?[] { id }, ct);
+            if (group == null) return NotFound();
+
+            var variants = await _db.Variants
+                .Where(v => v.ProductGroupId == id && !v.IsDeleted)
+                .ToListAsync(ct);
+
+            var multiplier = 1m - (req.DiscountPercent / 100m);
+            foreach (var v in variants)
+            {
+                v.ListPrice = v.Price;
+                v.Price = Math.Round(v.Price * multiplier, 2);
+            }
+
+            await _db.SaveChangesAsync(ct);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Remove discount from all variants in the product group (sets ListPrice = null).
+        /// </summary>
+        [HttpPost("{id:guid}/discount/remove")]
+        public async Task<IActionResult> RemoveDiscount(Guid id, CancellationToken ct = default)
+        {
+            var group = await _db.ProductGroups.FindAsync(new object?[] { id }, ct);
+            if (group == null) return NotFound();
+
+            var variants = await _db.Variants
+                .Where(v => v.ProductGroupId == id)
+                .ToListAsync(ct);
+
+            foreach (var v in variants)
+                v.ListPrice = null;
+
+            await _db.SaveChangesAsync(ct);
             return NoContent();
         }
 

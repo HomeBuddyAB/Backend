@@ -48,6 +48,23 @@ namespace HomeBuddy_API
                 builder.Services.AddDbContext<ApplicationDbContext>(options =>
                     options.UseSqlServer(connString));
 
+                // Caching: prefer Redis if configured, otherwise fall back to in-memory distributed cache
+                var redisConnection = builder.Configuration.GetConnectionString("Redis");
+                if (!string.IsNullOrWhiteSpace(redisConnection))
+                {
+                    builder.Services.AddStackExchangeRedisCache(options =>
+                    {
+                        options.Configuration = redisConnection;
+                        options.InstanceName = "HomeBuddy_";
+                    });
+                    Console.WriteLine("Redis distributed cache configured.");
+                }
+                else
+                {
+                    builder.Services.AddDistributedMemoryCache();
+                    Console.WriteLine("Using in-memory distributed cache (Redis not configured).");
+                }
+
                 // Dependency Injection for Repositories and Services
                 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
                 builder.Services.AddScoped<IOrderService, OrderService>();
@@ -76,6 +93,17 @@ namespace HomeBuddy_API
                         options.JsonSerializerOptions.WriteIndented = false;
                     });
                 builder.Services.AddEndpointsApiExplorer();
+
+                // Application Insights telemetry (enabled only when connection string is configured)
+                var appInsightsConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
+                if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))
+                {
+                    builder.Services.AddApplicationInsightsTelemetry(options =>
+                    {
+                        options.ConnectionString = appInsightsConnectionString;
+                    });
+                    Console.WriteLine("Application Insights telemetry configured.");
+                }
 
                 // Swagger with JWT Auth
                 builder.Services.AddSwaggerGen(options =>

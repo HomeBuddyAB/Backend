@@ -10,6 +10,7 @@ public class SkuListItemResponse
     public string Color { get; set; } = null!;
     public string Size { get; set; } = null!;
     public decimal Price { get; set; }
+    public decimal? ListPrice { get; set; }
     public bool InStock { get; set; }
     public string? PrimaryImageUrl { get; set; }
     public string GroupLink { get; set; } = null!;

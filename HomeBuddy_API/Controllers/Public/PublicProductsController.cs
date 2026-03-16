@@ -100,6 +100,101 @@ public class PublicProductsController : ControllerBase
                 Color = v.Color,
                 Size = v.Size,
                 Price = v.Price,
+                ListPrice = v.ListPrice,
+                InStock = v.Inventory.Quantity > 0,
+                PrimaryImageUrl = primary,
+                GroupLink = groupPath,
+                MoreVariantsCount = Math.Max(0, siblingsCount)
+            });
+        }
+
+        var totalPages = (int)Math.Ceiling(total / (double)pageSize);
+        var result = new DTOs.Responses.ProductListPageResponse
+        {
+            Items = responses,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
+        };
+        Response.Headers["X-Total-Count"] = total.ToString();
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Returns discounted products only (variants where ListPrice is set higher than Price).
+    /// Useful for a "Deals" or "On Sale" page in the frontend.
+    /// </summary>
+    [HttpGet("deals")]
+    [ProducesResponseType(typeof(DTOs.Responses.ProductListPageResponse), 200)]
+    public async Task<IActionResult> Deals([FromQuery] PublicListQuery q, CancellationToken ct)
+    {
+        var variants = _db.Variants
+            .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category)
+            .Include(v => v.Inventory)
+            .Include(v => v.VariantImages)
+            .Where(v =>
+                !v.IsDeleted &&
+                !v.ProductGroup.IsDeleted &&
+                v.ListPrice.HasValue &&
+                v.ListPrice.Value > v.Price &&
+                v.Inventory.Quantity > 0);
+
+        // Optional extra filters (category, search, etc.) can still be applied
+        if (!string.IsNullOrWhiteSpace(q.CategorySlug))
+            variants = variants.Where(v => v.ProductGroup.Category.Slug == q.CategorySlug);
+
+        if (!string.IsNullOrWhiteSpace(q.Search))
+        {
+            var term = q.Search.Trim().ToLower();
+            variants = variants.Where(v =>
+                (v.ProductGroup.Name != null && v.ProductGroup.Name.ToLower().Contains(term)) ||
+                (v.Sku != null && v.Sku.ToLower().Contains(term)));
+        }
+
+        // Sort by relative discount descending, then by price
+        variants = variants
+            .OrderByDescending(v => (v.ListPrice!.Value - v.Price) / v.ListPrice!.Value)
+            .ThenBy(v => v.Price);
+
+        var page = Math.Max(1, q.Page);
+        var pageSize = Math.Clamp(q.PageSize, 1, 100);
+
+        var total = await variants.CountAsync(ct);
+        var items = await variants
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        string ResolvePrimary(HomeBuddy_API.Models.Variant v)
+        {
+            var skuPrimary = v.VariantImages.Where(i => i.IsPrimary).OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault();
+            if (!string.IsNullOrEmpty(skuPrimary)) return skuPrimary;
+            var colorPrimary = _db.ColorImages.Where(ci => ci.ProductGroupId == v.ProductGroupId && ci.Color == v.Color && ci.IsPrimary)
+                                              .OrderBy(ci => ci.SortOrder).Select(ci => ci.Url).FirstOrDefault();
+            return colorPrimary ?? string.Empty;
+        }
+
+        var responses = new List<DTOs.Responses.SkuListItemResponse>();
+        foreach (var v in items)
+        {
+            var primary = ResolvePrimary(v);
+            var slugOrObject = string.IsNullOrWhiteSpace(v.ProductGroup.Slug) ? v.ProductGroup.ObjectId : v.ProductGroup.Slug!;
+            var groupPath = $"/groups/{slugOrObject}?sku={Uri.EscapeDataString(v.Sku)}";
+            var siblingsCount = await _db.Variants.CountAsync(x => x.ProductGroupId == v.ProductGroupId && !x.IsDeleted && x.Sku != v.Sku, ct);
+
+            responses.Add(new DTOs.Responses.SkuListItemResponse
+            {
+                Id = v.Id,
+                Sku = v.Sku,
+                ObjectId = v.ProductGroup.ObjectId,
+                Slug = v.ProductGroup.Slug,
+                GroupName = v.ProductGroup.Name,
+                MainCategory = v.ProductGroup.Category.Name,
+                Color = v.Color,
+                Size = v.Size,
+                Price = v.Price,
+                ListPrice = v.ListPrice,
                 InStock = v.Inventory.Quantity > 0,
                 PrimaryImageUrl = primary,
                 GroupLink = groupPath,
