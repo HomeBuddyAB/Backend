@@ -18,6 +18,12 @@ namespace HomeBuddy_API.Models
 
         [MaxLength(255)]
         public string Cart { get; set; } = "{}";
+
+        // Password reset (store only hashed token)
+        [MaxLength(64)]
+        public string? PasswordResetTokenHash { get; set; }
+
+        public DateTime? PasswordResetTokenExpiresAtUtc { get; set; }
     }
 }
 

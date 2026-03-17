@@ -4,6 +4,7 @@ using HomeBuddy_API.Exceptions;
 using HomeBuddy_API.Interfaces;
 using HomeBuddy_API.Interfaces.AdminInterfaces;
 using HomeBuddy_API.Interfaces.AuthInterfaces;
+using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Interfaces.InventoryInterfaces;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using HomeBuddy_API.Interfaces.ProductInterfaces;
@@ -58,6 +59,7 @@ namespace HomeBuddy_API
                 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
                 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
                 builder.Services.AddScoped<IAuthService, AuthService>();
+                builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
                 builder.Services.AddScoped<IUserRepository, UserRepository>();
                 builder.Services.AddScoped<IUserService, UserService>();
                 builder.Services.AddScoped<IAdminRepository, AdminRepository>();

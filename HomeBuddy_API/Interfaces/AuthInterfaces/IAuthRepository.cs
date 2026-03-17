@@ -6,6 +6,7 @@ namespace HomeBuddy_API.Interfaces.AuthInterfaces
     public interface IAuthRepository
     {
         Task<User?> GetUserByEmailAsync(string email);
+        Task<User?> GetUserByPasswordResetTokenHashAsync(string tokenHash);
         Task<Admin?> GetAdminByUserNameAsync(string username);
         Task AddUserAsync(User user);
         Task AddAdminAsync(Admin admin);

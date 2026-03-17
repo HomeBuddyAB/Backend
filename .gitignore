@@ -19,20 +19,3 @@ appsettings.Development.json
 appsettings.Local.json
 BAMF_API/appsettings.json
 BAMF_API/appsettings.json
-
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "http://localhost:5000"
-  },
-  "Jwt": {
-    "Key": "YourSuperSecretKeyThatIsAtLeast32CharactersLong!",
-    "Issuer": "HomeBuddy_API",
-    "Audience": "HomeBuddy_API"
-  },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  }
-}

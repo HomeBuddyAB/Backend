@@ -1,5 +1,6 @@
-﻿using HomeBuddy_API.DTOs.Requests.Auth;
+using HomeBuddy_API.DTOs.Requests.Auth;
 using HomeBuddy_API.Interfaces.AuthInterfaces;
+using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -14,11 +15,13 @@ namespace HomeBuddy_API.Services
     {
         private readonly IAuthRepository _authRepo;
         private readonly IConfiguration _config;
+        private readonly IEmailSender _emailSender;
 
-        public AuthService(IAuthRepository authRepo, IConfiguration config)
+        public AuthService(IAuthRepository authRepo, IConfiguration config, IEmailSender emailSender)
         {
             _authRepo = authRepo;
             _config = config;
+            _emailSender = emailSender;
         }
 
         // User Registration
@@ -74,6 +77,60 @@ namespace HomeBuddy_API.Services
                 Token = GenerateJwtToken(admin.UserName, admin.Id, "Admin")
             };
         }
+
+        public async Task ForgotPasswordAsync(ForgotPasswordDto dto)
+        {
+            // Always respond OK to avoid user enumeration
+            var user = await _authRepo.GetUserByEmailAsync(dto.Email);
+            if (user == null)
+            {
+                return;
+            }
+
+            var token = GenerateResetToken();
+            var tokenHash = HashToken(token);
+
+            user.PasswordResetTokenHash = tokenHash;
+            user.PasswordResetTokenExpiresAtUtc = DateTime.UtcNow.AddMinutes(GetResetTokenTtlMinutes());
+            await _authRepo.SaveChangesAsync();
+
+            var resetLink = BuildResetLink(token);
+            var subject = "Reset your HomeBuddy password";
+            var body = $@"
+<div style=""font-family:Arial,sans-serif;line-height:1.5"">
+  <h2>Reset your password</h2>
+  <p>We received a request to reset your password. Click the button below to choose a new one.</p>
+  <p style=""margin:24px 0"">
+    <a href=""{resetLink}"" style=""background:#8B4545;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px;display:inline-block"">Reset password</a>
+  </p>
+  <p>If you didn’t request this, you can ignore this email.</p>
+  <p style=""color:#666;font-size:12px"">This link expires in {GetResetTokenTtlMinutes()} minutes.</p>
+</div>";
+
+            await _emailSender.SendAsync(user.Email, subject, body);
+        }
+
+        public async Task ResetPasswordAsync(ResetPasswordDto dto)
+        {
+            var tokenHash = HashToken(dto.Token);
+            var user = await _authRepo.GetUserByPasswordResetTokenHashAsync(tokenHash);
+
+            if (user == null ||
+                user.PasswordResetTokenExpiresAtUtc == null ||
+                user.PasswordResetTokenExpiresAtUtc <= DateTime.UtcNow)
+            {
+                throw new Exception("Invalid or expired reset token");
+            }
+
+            CreatePasswordHash(dto.NewPassword, out var hash, out var salt);
+            user.PasswordHash = hash;
+            user.PasswordSalt = salt;
+            user.PasswordResetTokenHash = null;
+            user.PasswordResetTokenExpiresAtUtc = null;
+
+            await _authRepo.SaveChangesAsync();
+        }
+
         // Helper Methods
         private void CreatePasswordHash(string password, out string hash, out string salt)
         {
@@ -110,6 +167,49 @@ namespace HomeBuddy_API.Services
             );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        private string GenerateResetToken()
+        {
+            var bytes = RandomNumberGenerator.GetBytes(32);
+            return Base64UrlEncode(bytes);
+        }
+
+        private string HashToken(string token)
+        {
+            var bytes = Encoding.UTF8.GetBytes(token);
+            var hash = SHA256.HashData(bytes);
+            return Convert.ToHexString(hash).ToLowerInvariant();
+        }
+
+        private int GetResetTokenTtlMinutes()
+        {
+            var ttlStr = _config["PasswordReset:TokenTtlMinutes"];
+            if (int.TryParse(ttlStr, out var ttl) && ttl >= 5 && ttl <= 24 * 60)
+            {
+                return ttl;
+            }
+            return 60;
+        }
+
+        private string BuildResetLink(string token)
+        {
+            var baseUrl = _config["Frontend:BaseUrl"] ?? _config["App:FrontendBaseUrl"];
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                baseUrl = "http://localhost:3000";
+            }
+
+            baseUrl = baseUrl.TrimEnd('/');
+            return $"{baseUrl}/reset-password?token={Uri.EscapeDataString(token)}";
+        }
+
+        private static string Base64UrlEncode(byte[] input)
+        {
+            return Convert.ToBase64String(input)
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
         }
     }
 }

@@ -19,6 +19,11 @@ namespace HomeBuddy_API.Repositories
             return await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
         }
 
+        public async Task<User?> GetUserByPasswordResetTokenHashAsync(string tokenHash)
+        {
+            return await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetTokenHash == tokenHash);
+        }
+
         public async Task<Admin?> GetAdminByUserNameAsync(string username)
         {
             return await _context.Admins.FirstOrDefaultAsync(a => a.UserName == username);
