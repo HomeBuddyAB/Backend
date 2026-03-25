@@ -94,6 +94,9 @@ namespace HomeBuddy_API
                     });
                 builder.Services.AddEndpointsApiExplorer();
 
+                // External catalogue client (TestApi / real provider)
+                builder.Services.AddHttpClient("catalogue");
+
                 // Application Insights telemetry (enabled only when connection string is configured)
                 var appInsightsConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];
                 if (!string.IsNullOrWhiteSpace(appInsightsConnectionString))

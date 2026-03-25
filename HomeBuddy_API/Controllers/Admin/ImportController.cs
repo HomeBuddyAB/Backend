@@ -22,6 +22,10 @@ public class ImportController : ControllerBase
     [HttpPost("products")]
     public async Task<IActionResult> ImportProducts([FromBody] ProductImportRequest request, CancellationToken ct)
     {
+        // Catalogue is now an external service. HomeBuddy backend must not accept catalogue imports.
+        return StatusCode(StatusCodes.Status410Gone,
+            "Catalogue import is no longer supported by HomeBuddy_API. Import into the standalone catalogue service instead.");
+
         // Simple shared-secret check, matching TestApi usage (X-Integration-Key header).
         var expectedKey = _config["Import:ApiKey"];
         if (string.IsNullOrWhiteSpace(expectedKey))

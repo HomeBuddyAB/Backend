@@ -11,10 +11,14 @@ namespace HomeBuddy_API.Controllers.Admin;
 public class AdminDashboardController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
+    private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _httpFactory;
 
-    public AdminDashboardController(ApplicationDbContext db)
+    public AdminDashboardController(ApplicationDbContext db, IConfiguration config, IHttpClientFactory httpFactory)
     {
         _db = db;
+        _config = config;
+        _httpFactory = httpFactory;
     }
 
     /// <summary>
@@ -37,14 +41,37 @@ public class AdminDashboardController : ControllerBase
 
         var customers = await _db.Users.LongCountAsync(ct);
 
-        var productGroups = await _db.ProductGroups.LongCountAsync(ct);
-        var variants = await _db.Variants.LongCountAsync(ct);
+        long productGroups = 0;
+        long variants = 0;
+        long lowStockVariants = 0;
+        long outOfStockVariants = 0;
 
-        var lowStockThreshold = 5;
-        var lowStockVariants = await _db.Inventories
-            .CountAsync(i => i.Quantity > 0 && i.Quantity <= lowStockThreshold, ct);
-        var outOfStockVariants = await _db.Inventories
-            .CountAsync(i => i.Quantity == 0, ct);
+        // Catalogue is external now; avoid reading catalogue from HomeBuddy DB.
+        // If Catalogue:BaseUrl is configured, fetch a lightweight estimate using /api/products.
+        var catalogueBase = _config["Catalogue:BaseUrl"];
+        if (!string.IsNullOrWhiteSpace(catalogueBase))
+        {
+            try
+            {
+                var client = _httpFactory.CreateClient("catalogue");
+                client.BaseAddress = new Uri(catalogueBase);
+
+                var apiKey = _config["Catalogue:ApiKey"];
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    client.DefaultRequestHeaders.Remove("X-Api-Key");
+                    client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+                }
+
+                // Request a minimal page and use totalCount for variant count.
+                var res = await client.GetFromJsonAsync<CatalogueListResponse>("/api/products?Page=1&PageSize=1", ct);
+                variants = res?.TotalCount ?? 0;
+            }
+            catch
+            {
+                // Keep zeros if catalogue isn't reachable; dashboard should still render.
+            }
+        }
 
         var reviewsCount = await _db.Reviews.LongCountAsync(ct);
         var averageRating = await _db.Reviews.AnyAsync(ct)
@@ -76,6 +103,11 @@ public class AdminDashboardController : ControllerBase
                 averageRating
             }
         });
+    }
+
+    private sealed class CatalogueListResponse
+    {
+        public long TotalCount { get; set; }
     }
 }
 
