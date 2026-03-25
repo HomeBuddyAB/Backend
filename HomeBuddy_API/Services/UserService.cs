@@ -37,9 +37,8 @@ namespace HomeBuddy_API.Services
             }
             if (updatedUser.NewPassword != null)
             {
-                CreatePasswordHash(updatedUser.NewPassword, out var newHash, out var newSalt);
-                existing.PasswordHash = newHash;
-                existing.PasswordSalt = newSalt;
+                existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(updatedUser.NewPassword);
+                existing.PasswordSalt = string.Empty;
             }
 
             await _userRepository.UpdateAsync(existing);
@@ -73,9 +72,8 @@ namespace HomeBuddy_API.Services
                 if (!VerifyPassword(dto.CurrentPassword, user.PasswordHash, user.PasswordSalt))
                     throw new Exception("Incorrect current password");
 
-                CreatePasswordHash(dto.NewPassword, out var newHash, out var newSalt);
-                user.PasswordHash = newHash;
-                user.PasswordSalt = newSalt;
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+                user.PasswordSalt = string.Empty;
             }
 
             await _userRepository.UpdateAsync(user);
@@ -98,18 +96,17 @@ namespace HomeBuddy_API.Services
         }
 
         // verification and hashing
-        private void CreatePasswordHash(string password, out string hash, out string salt)
-        {
-            using var hmac = new HMACSHA512();
-            salt = Convert.ToBase64String(hmac.Key);
-            hash = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(password)));
-        }
-
         private bool VerifyPassword(string password, string storedHash, string storedSalt)
         {
-            using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
-            var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(computed) == storedHash;
+            // Legacy hashes (HMACSHA512) store a non-empty salt.
+            if (!string.IsNullOrWhiteSpace(storedSalt))
+            {
+                using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
+                var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+                return Convert.ToBase64String(computed) == storedHash;
+            }
+
+            return BCrypt.Net.BCrypt.Verify(password, storedHash);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using HomeBuddy_API.DTOs.Responses;
+using HomeBuddy_API.DTOs.Responses;
 using HomeBuddy_API.Interfaces.AdminInterfaces;
 using HomeBuddy_API.Models;
 using System.Security.Cryptography;
@@ -71,16 +71,20 @@ namespace HomeBuddy_API.Services
 
         private void CreatePasswordHash(string password, out string hash, out string salt)
         {
-            using var hmac = new HMACSHA512();
-            salt = Convert.ToBase64String(hmac.Key);
-            hash = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(password)));
+            salt = string.Empty;
+            hash = BCrypt.Net.BCrypt.HashPassword(password);
         }
 
         private bool VerifyPassword(string password, string storedHash, string storedSalt)
         {
-            using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
-            var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(computed) == storedHash;
+            if (!string.IsNullOrWhiteSpace(storedSalt))
+            {
+                using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
+                var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
+                return Convert.ToBase64String(computed) == storedHash;
+            }
+
+            return BCrypt.Net.BCrypt.Verify(password, storedHash);
         }
     }
 }

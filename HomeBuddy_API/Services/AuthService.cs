@@ -1,8 +1,10 @@
 using HomeBuddy_API.DTOs.Requests.Auth;
 using HomeBuddy_API.Interfaces.AuthInterfaces;
+using HomeBuddy_API.Data;
 using HomeBuddy_API.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -14,12 +16,14 @@ namespace HomeBuddy_API.Services
     public class AuthService : IAuthService
     {
         private readonly IAuthRepository _authRepo;
+        private readonly ApplicationDbContext _db;
         private readonly IConfiguration _config;
         private readonly ILogger<AuthService> _logger;
 
-        public AuthService(IAuthRepository authRepo, IConfiguration config, ILogger<AuthService> logger)
+        public AuthService(IAuthRepository authRepo, ApplicationDbContext db, IConfiguration config, ILogger<AuthService> logger)
         {
             _authRepo = authRepo;
+            _db = db;
             _config = config;
             _logger = logger;
         }
@@ -42,7 +46,8 @@ namespace HomeBuddy_API.Services
             {
                 Email = dto.Email,
                 PasswordHash = hash,
-                PasswordSalt = salt,
+                // Keep column for backwards-compatibility; empty means bcrypt hash stored in PasswordHash.
+                PasswordSalt = string.Empty,
                 Cart = mergedCart
             };
 
@@ -63,7 +68,7 @@ namespace HomeBuddy_API.Services
         public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
         {
             var user = await _authRepo.GetUserByEmailAsync(dto.Email);
-            if (user == null || !VerifyPassword(dto.Password, user.PasswordHash, user.PasswordSalt))
+            if (user == null || !await VerifyAndUpgradePasswordIfNeededAsync(user, dto.Password))
             {
                 _logger.LogWarning("Login failed for {Email}: invalid credentials", dto.Email);
                 throw new Exception("Invalid credentials");
@@ -90,7 +95,7 @@ namespace HomeBuddy_API.Services
         public async Task<AuthResponseDto> LoginAdminAsync(AdminLoginDto dto)
         {
             var admin = await _authRepo.GetAdminByUserNameAsync(dto.UserName);
-            if (admin == null || !VerifyPassword(dto.Password, admin.PasswordHash, admin.PasswordSalt))
+            if (admin == null || !await VerifyAndUpgradePasswordIfNeededAsync(admin, dto.Password))
             {
                 _logger.LogWarning("Admin login failed for {UserName}: invalid credentials", dto.UserName);
                 throw new Exception("Invalid admin credentials");
@@ -105,16 +110,126 @@ namespace HomeBuddy_API.Services
         // Helper Methods
         private void CreatePasswordHash(string password, out string hash, out string salt)
         {
-            using var hmac = new HMACSHA512();
-            salt = Convert.ToBase64String(hmac.Key);
-            hash = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(password)));
+            // bcrypt includes salt in the hash string; keep salt column empty for new hashes.
+            salt = string.Empty;
+            hash = BCrypt.Net.BCrypt.HashPassword(password);
         }
 
-        private bool VerifyPassword(string password, string storedHash, string storedSalt)
+        private bool VerifyPasswordLegacyHmac(string password, string storedHash, string storedSalt)
         {
             using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
             var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
             return Convert.ToBase64String(computedHash) == storedHash;
+        }
+
+        private async Task<bool> VerifyAndUpgradePasswordIfNeededAsync(User user, string password)
+        {
+            // Legacy: HMACSHA512 + stored salt
+            if (!string.IsNullOrWhiteSpace(user.PasswordSalt))
+            {
+                if (!VerifyPasswordLegacyHmac(password, user.PasswordHash, user.PasswordSalt))
+                    return false;
+
+                // Upgrade to bcrypt on successful login
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password);
+                user.PasswordSalt = string.Empty;
+                await _authRepo.SaveChangesAsync();
+                return true;
+            }
+
+            return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+        }
+
+        private async Task<bool> VerifyAndUpgradePasswordIfNeededAsync(Admin admin, string password)
+        {
+            if (!string.IsNullOrWhiteSpace(admin.PasswordSalt))
+            {
+                if (!VerifyPasswordLegacyHmac(password, admin.PasswordHash, admin.PasswordSalt))
+                    return false;
+
+                admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password);
+                admin.PasswordSalt = string.Empty;
+                await _authRepo.SaveChangesAsync();
+                return true;
+            }
+
+            return BCrypt.Net.BCrypt.Verify(password, admin.PasswordHash);
+        }
+
+        private static string GenerateResetToken()
+        {
+            var bytes = RandomNumberGenerator.GetBytes(32);
+            // URL-safe Base64 (no padding)
+            return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        private static string Sha256Base64(string raw)
+        {
+            var bytes = Encoding.UTF8.GetBytes(raw);
+            var hash = SHA256.HashData(bytes);
+            return Convert.ToBase64String(hash);
+        }
+
+        public async Task<string?> CreatePasswordResetTokenAsync(ForgotPasswordDto dto, CancellationToken ct = default)
+        {
+            var email = (dto.Email ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(email))
+                return null;
+
+            var user = await _authRepo.GetUserByEmailAsync(email);
+            if (user == null)
+                return null; // do not leak existence
+
+            // Invalidate previous outstanding tokens for this user
+            var now = DateTimeOffset.UtcNow;
+            var outstanding = _db.PasswordResetTokens
+                .Where(t => t.UserId == user.Id && t.UsedUtc == null && t.ExpiresUtc > now);
+            foreach (var t in outstanding)
+                t.UsedUtc = now;
+
+            var rawToken = GenerateResetToken();
+            var tokenHash = Sha256Base64(rawToken);
+
+            _db.PasswordResetTokens.Add(new PasswordResetToken
+            {
+                UserId = user.Id,
+                TokenHash = tokenHash,
+                ExpiresUtc = now.AddMinutes(30),
+                UsedUtc = null,
+                CreatedUtc = now
+            });
+
+            await _db.SaveChangesAsync(ct);
+            return rawToken;
+        }
+
+        public async Task ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default)
+        {
+            var email = (dto.Email ?? string.Empty).Trim();
+            var tokenRaw = (dto.Token ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(tokenRaw))
+                throw new InvalidOperationException("Email and token are required.");
+
+            var user = await _authRepo.GetUserByEmailAsync(email);
+            if (user == null)
+                throw new InvalidOperationException("Invalid token.");
+
+            var now = DateTimeOffset.UtcNow;
+            var tokenHash = Sha256Base64(tokenRaw);
+
+            var token = await _db.PasswordResetTokens
+                .Where(t => t.UserId == user.Id && t.TokenHash == tokenHash && t.UsedUtc == null && t.ExpiresUtc > now)
+                .OrderByDescending(t => t.CreatedUtc)
+                .FirstOrDefaultAsync(ct);
+
+            if (token == null)
+                throw new InvalidOperationException("Invalid token.");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            user.PasswordSalt = string.Empty;
+            token.UsedUtc = now;
+
+            await _db.SaveChangesAsync(ct);
         }
 
         /// <summary>Merges guest cart into user cart by SKU. Same SKU: add quantities. Expects {"items":[{"sku":"...","quantity":n}]} or {"items":[{"sku":"...","qty":n}]}.</summary>

@@ -28,6 +28,7 @@ namespace HomeBuddy_API.Data
         public DbSet<VariantImage> VariantImages => Set<VariantImage>();
         public DbSet<SavedCustomer> SavedCustomers { get; set; } = default!;
         public DbSet<UserFavorite> UserFavorites { get; set; } = default!;
+        public DbSet<PasswordResetToken> PasswordResetTokens { get; set; } = default!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
