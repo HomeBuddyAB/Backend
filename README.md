@@ -114,4 +114,4 @@ Admin-endpoints:
 
 ## Länk
 
-`https://homebuddy-react-aedac9f5ckbbfmcm.norwayeast-01.azurewebsites.net/`
+`https://homebuddy-react-aedac9f5ckbbfmcm.norwayeast-01.azurewebsites.net/ "(ur funktion för tillfället)"`
