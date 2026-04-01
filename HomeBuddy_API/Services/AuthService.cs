@@ -1,5 +1,6 @@
 using HomeBuddy_API.DTOs.Requests.Auth;
 using HomeBuddy_API.Interfaces.AuthInterfaces;
+using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Data;
 using HomeBuddy_API.Models;
 using Microsoft.Extensions.Configuration;
@@ -19,13 +20,20 @@ namespace HomeBuddy_API.Services
         private readonly ApplicationDbContext _db;
         private readonly IConfiguration _config;
         private readonly ILogger<AuthService> _logger;
+        private readonly IEmailSender _emailSender;
 
-        public AuthService(IAuthRepository authRepo, ApplicationDbContext db, IConfiguration config, ILogger<AuthService> logger)
+        public AuthService(
+            IAuthRepository authRepo,
+            ApplicationDbContext db,
+            IConfiguration config,
+            ILogger<AuthService> logger,
+            IEmailSender emailSender)
         {
             _authRepo = authRepo;
             _db = db;
             _config = config;
             _logger = logger;
+            _emailSender = emailSender;
         }
 
         // User Registration
@@ -200,7 +208,37 @@ namespace HomeBuddy_API.Services
             });
 
             await _db.SaveChangesAsync(ct);
+
+            await TrySendPasswordResetEmailAsync(email, rawToken, ct);
+
             return rawToken;
+        }
+
+        private async Task TrySendPasswordResetEmailAsync(string email, string rawToken, CancellationToken ct)
+        {
+            try
+            {
+                var baseUrl = (_config["Frontend:BaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+                var resetLink =
+                    $"{baseUrl}/reset-password?email={Uri.EscapeDataString(email)}&token={Uri.EscapeDataString(rawToken)}";
+                const string subject = "Reset your HomeBuddy password";
+                var body = $@"
+<div style=""font-family:Arial,sans-serif;line-height:1.5;color:#222"">
+  <h2 style=""color:#8B4545"">Reset your password</h2>
+  <p>We received a request to reset the password for your HomeBuddy account.</p>
+  <p style=""margin:24px 0"">
+    <a href=""{resetLink}"" style=""background:#8B4545;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px;display:inline-block"">Choose a new password</a>
+  </p>
+  <p style=""font-size:13px;color:#666"">If the button does not work, copy this link into your browser:<br/><span style=""word-break:break-all"">{resetLink}</span></p>
+  <p>If you did not request this, you can ignore this email.</p>
+  <p style=""color:#666;font-size:12px"">This link expires in 30 minutes.</p>
+</div>";
+                await _emailSender.SendAsync(email, subject, body, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send password reset email to {Email}", email);
+            }
         }
 
         public async Task ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default)

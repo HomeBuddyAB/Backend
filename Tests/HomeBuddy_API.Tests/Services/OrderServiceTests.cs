@@ -1,12 +1,15 @@
 using HomeBuddy_API.DTOs.Requests.OrderDTOs;
 using HomeBuddy_API.Exceptions;
 using HomeBuddy_API.Interfaces;
+using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Interfaces.InventoryInterfaces;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using HomeBuddy_API.Interfaces.ProductInterfaces;
 using HomeBuddy_API.Interfaces.TaxInterfaces;
 using HomeBuddy_API.Models;
 using HomeBuddy_API.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -19,6 +22,7 @@ namespace HomeBuddy_API.Tests.Services
         private readonly Mock<IVariantRepository> _variantRepoMock;
         private readonly Mock<ITaxBracketService> _taxServiceMock;
         private readonly Mock<IUnitOfWork> _uowMock;
+        private readonly Mock<IEmailSender> _emailSenderMock;
         private readonly OrderService _service;
 
         public OrderServiceTests()
@@ -28,6 +32,10 @@ namespace HomeBuddy_API.Tests.Services
             _variantRepoMock = new Mock<IVariantRepository>();
             _taxServiceMock = new Mock<ITaxBracketService>();
             _uowMock = new Mock<IUnitOfWork>();
+            _emailSenderMock = new Mock<IEmailSender>();
+            _emailSenderMock
+                .Setup(e => e.SendAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Returns(Task.CompletedTask);
 
             // Default: Germany 19% VAT
             _taxServiceMock.Setup(t => t.GetVatRate(It.IsAny<string>())).Returns(19m);
@@ -38,12 +46,18 @@ namespace HomeBuddy_API.Tests.Services
                     It.IsAny<CancellationToken>()))
                 .Returns<Func<CancellationToken, Task>, CancellationToken>((action, ct) => action(ct));
 
+            var config = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?> { ["Frontend:BaseUrl"] = "http://localhost:3000" }).Build();
+
             _service = new OrderService(
                 _orderRepoMock.Object,
                 _inventoryServiceMock.Object,
                 _variantRepoMock.Object,
                 _taxServiceMock.Object,
-                _uowMock.Object);
+                _uowMock.Object,
+                NullLogger<OrderService>.Instance,
+                _emailSenderMock.Object,
+                config);
         }
 
         [Fact]

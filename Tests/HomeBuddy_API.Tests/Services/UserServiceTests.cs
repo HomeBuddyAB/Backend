@@ -4,6 +4,7 @@ using HomeBuddy_API.DTOs.Responses;
 using HomeBuddy_API.Interfaces.UserInterfaces;
 using HomeBuddy_API.Models;
 using HomeBuddy_API.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using AdminUpdateUserDto = HomeBuddy_API.DTOs.Requests.AdminDashDTOs.UpdateUserDto;
@@ -19,7 +20,7 @@ namespace HomeBuddy_API.Tests.Services
         public UserServiceTests()
         {
             _repoMock = new Mock<IUserRepository>();
-            _service = new UserService(_repoMock.Object);
+            _service = new UserService(_repoMock.Object, NullLogger<UserService>.Instance);
         }
 
         // Admin Functions Tests

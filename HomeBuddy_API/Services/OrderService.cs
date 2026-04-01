@@ -1,11 +1,13 @@
 using HomeBuddy_API.DTOs.Requests.OrderDTOs;
 using HomeBuddy_API.Exceptions;
 using HomeBuddy_API.Interfaces;
+using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Interfaces.InventoryInterfaces;
 using HomeBuddy_API.Interfaces.OrderInterfaces;
 using HomeBuddy_API.Interfaces.ProductInterfaces;
 using HomeBuddy_API.Interfaces.TaxInterfaces;
 using HomeBuddy_API.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace HomeBuddy_API.Services
 {
@@ -17,6 +19,8 @@ namespace HomeBuddy_API.Services
         private readonly ITaxBracketService _taxService;
         private readonly IUnitOfWork _uow;
         private readonly ILogger<OrderService> _logger;
+        private readonly IEmailSender _emailSender;
+        private readonly IConfiguration _configuration;
 
         public OrderService(
             IOrderRepository orderRepo,
@@ -24,7 +28,9 @@ namespace HomeBuddy_API.Services
             IVariantRepository variantRepository,
             ITaxBracketService taxService,
             IUnitOfWork uow,
-            ILogger<OrderService> logger)
+            ILogger<OrderService> logger,
+            IEmailSender emailSender,
+            IConfiguration configuration)
         {
             _orderRepo = orderRepo;
             _inventoryService = inventoryService;
@@ -32,6 +38,8 @@ namespace HomeBuddy_API.Services
             _taxService = taxService;
             _uow = uow;
             _logger = logger;
+            _emailSender = emailSender;
+            _configuration = configuration;
         }
 
         public async Task<IEnumerable<Order>> GetAllOrdersAsync(int page)
@@ -75,6 +83,7 @@ namespace HomeBuddy_API.Services
 
             decimal subtotal = 0m;
             var orderItems = new List<OrderItem>();
+            var lineSummaries = new List<(string Sku, int Quantity, decimal UnitPrice, decimal LineTotal)>();
 
             await _uow.ExecuteInTransactionAsync(async ct =>
             {
@@ -91,7 +100,9 @@ namespace HomeBuddy_API.Services
 
                     // Price
                     var unitPrice = variant.Price;
-                    subtotal += unitPrice * item.Quantity;
+                    var lineTotal = unitPrice * item.Quantity;
+                    subtotal += lineTotal;
+                    lineSummaries.Add((skuNormalized, item.Quantity, unitPrice, lineTotal));
 
                     // Decrement inventory and record a sale transaction using VariantId (no redundant SKU lookup).
                     await _inventoryService.AdjustInventoryAsync(
@@ -134,16 +145,82 @@ namespace HomeBuddy_API.Services
                 await _uow.SaveChangesAsync(ct);
             });
 
+            var computedTax = Math.Round(subtotal * (vatRate.Value / 100m), 2, MidpointRounding.AwayFromZero);
+            var computedTotal = subtotal + computedTax;
+
             _logger.LogInformation(
                 "Order {OrderNo} created for {Email} (UserId: {UserId}) with subtotal {Subtotal} and total {Total} in country {CountryCode}",
                 orderNo,
                 dto.Email,
                 userId,
                 subtotal,
-                subtotal + Math.Round(subtotal * (vatRate.Value / 100m), 2, MidpointRounding.AwayFromZero),
+                computedTotal,
                 countryCode);
 
+            await TrySendOrderConfirmationEmailAsync(
+                dto.Email.Trim(),
+                orderNo,
+                countryCode,
+                lineSummaries,
+                subtotal,
+                computedTax,
+                vatRate.Value,
+                computedTotal);
+
             return orderNo;
+        }
+
+        private async Task TrySendOrderConfirmationEmailAsync(
+            string toEmail,
+            string orderNo,
+            string countryCode,
+            List<(string Sku, int Quantity, decimal UnitPrice, decimal LineTotal)> lines,
+            decimal subtotal,
+            decimal taxAmount,
+            decimal vatPercent,
+            decimal total)
+        {
+            try
+            {
+                var baseUrl = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+                var subject = $"Order confirmation — {orderNo}";
+                var rows = string.Join("", lines.Select(line => $@"
+    <tr>
+      <td style=""padding:8px;border-bottom:1px solid #eee"">{line.Sku}</td>
+      <td style=""padding:8px;border-bottom:1px solid #eee;text-align:right"">{line.Quantity}</td>
+      <td style=""padding:8px;border-bottom:1px solid #eee;text-align:right"">{line.UnitPrice:F2} €</td>
+      <td style=""padding:8px;border-bottom:1px solid #eee;text-align:right"">{line.LineTotal:F2} €</td>
+    </tr>"));
+                var body = $@"
+<div style=""font-family:Arial,sans-serif;line-height:1.5;color:#222"">
+  <h2 style=""color:#8B4545"">Thank you for your order</h2>
+  <p>This confirms we have received your order. Please keep your order number for your records.</p>
+  <p><strong>Order number:</strong> {orderNo}</p>
+  <p><strong>Country (VAT):</strong> {countryCode}</p>
+  <table style=""width:100%;border-collapse:collapse;margin:16px 0"">
+    <thead>
+      <tr style=""background:#f5f5f5"">
+        <th style=""text-align:left;padding:8px"">SKU</th>
+        <th style=""text-align:right;padding:8px"">Qty</th>
+        <th style=""text-align:right;padding:8px"">Unit</th>
+        <th style=""text-align:right;padding:8px"">Line</th>
+      </tr>
+    </thead>
+    <tbody>{rows}
+    </tbody>
+  </table>
+  <p>Subtotal: <strong>{subtotal:F2} €</strong><br/>
+  VAT ({vatPercent:F2}%): <strong>{taxAmount:F2} €</strong><br/>
+  <strong>Total: {total:F2} €</strong></p>
+  <p style=""margin-top:24px""><a href=""{baseUrl}"" style=""color:#8B4545"">Return to the shop</a></p>
+  <p style=""color:#666;font-size:12px"">This message was sent to the email address used at checkout.</p>
+</div>";
+                await _emailSender.SendAsync(toEmail, subject, body);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send order confirmation email for order {OrderNo} to {Email}", orderNo, toEmail);
+            }
         }
 
         public async Task ClaimOrderAsync(string orderNo, int userId, string userEmail)

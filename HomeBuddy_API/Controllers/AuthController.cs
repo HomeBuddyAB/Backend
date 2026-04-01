@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
+using Microsoft.Extensions.Configuration;
 
 namespace HomeBuddy_API.Controllers
 {
@@ -13,10 +14,12 @@ namespace HomeBuddy_API.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
+        private readonly IConfiguration _configuration;
 
-        public AuthController(IAuthService authService)
+        public AuthController(IAuthService authService, IConfiguration configuration)
         {
             _authService = authService;
+            _configuration = configuration;
         }
 
         [EnableRateLimiting("auth")]
@@ -87,18 +90,18 @@ namespace HomeBuddy_API.Controllers
         }
 
         /// <summary>
-        /// Request a password reset token. In production this should email the token/link.
-        /// For now, to keep it code-only, the token is only returned in Development.
+        /// Request a password reset. Sends an email with a link when SMTP is configured.
+        /// If SMTP is not configured, returns the raw token only in Development (for local testing).
         /// </summary>
         [EnableRateLimiting("auth")]
         [HttpPost("forgot-password")]
         [AllowAnonymous]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto, CancellationToken ct)
         {
-            // Always return 204 to avoid leaking whether email exists.
             var token = await _authService.CreatePasswordResetTokenAsync(dto, ct);
 
-            if (token != null && Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development")
+            var smtpConfigured = !string.IsNullOrWhiteSpace(_configuration["Email:SmtpHost"]);
+            if (token != null && !smtpConfigured && Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development")
             {
                 return Ok(new { token });
             }

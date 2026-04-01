@@ -10,6 +10,7 @@ using HomeBuddy_API.Interfaces.ProductInterfaces;
 using HomeBuddy_API.Interfaces.TaxInterfaces;
 using HomeBuddy_API.Interfaces.ReviewInterfaces;
 using HomeBuddy_API.Interfaces.UserInterfaces;
+using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Repositories;
 using HomeBuddy_API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -80,6 +81,7 @@ namespace HomeBuddy_API
                 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
                 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
                 builder.Services.AddScoped<IAuthService, AuthService>();
+                builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
                 builder.Services.AddScoped<IUserRepository, UserRepository>();
                 builder.Services.AddScoped<IUserService, UserService>();
                 builder.Services.AddScoped<IAdminRepository, AdminRepository>();
