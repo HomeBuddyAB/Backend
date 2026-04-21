@@ -55,7 +55,7 @@ namespace HomeBuddy_API.Controllers
             }
 
             var variants = await _db.Variants
-                .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category)
+                .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category).ThenInclude(c => c.ParentCategory)
                 .Include(v => v.Inventory)
                 .Include(v => v.VariantImages)
                 .Where(v => favoriteVariantIds.Contains(v.Id) && !v.IsDeleted && !v.ProductGroup.IsDeleted)
@@ -86,6 +86,9 @@ namespace HomeBuddy_API.Controllers
             foreach (var v in variants)
             {
                 var primary = ResolvePrimary(v);
+                var parentCategory = v.ProductGroup.Category.ParentCategory;
+                var mainCategory = parentCategory?.Name ?? v.ProductGroup.Category.Name;
+                var mainCategorySlug = parentCategory?.Slug ?? v.ProductGroup.Category.Slug;
                 var slugOrObject = string.IsNullOrWhiteSpace(v.ProductGroup.Slug)
                     ? v.ProductGroup.ObjectId
                     : v.ProductGroup.Slug!;
@@ -101,7 +104,10 @@ namespace HomeBuddy_API.Controllers
                     ObjectId = v.ProductGroup.ObjectId,
                     Slug = v.ProductGroup.Slug,
                     GroupName = v.ProductGroup.Name,
-                    MainCategory = v.ProductGroup.Category.Name,
+                    MainCategory = mainCategory,
+                    CategorySlug = mainCategorySlug,
+                    SubcategoryName = v.ProductGroup.Category.Name,
+                    SubcategorySlug = v.ProductGroup.Category.Slug,
                     Color = v.Color,
                     Size = v.Size,
                     Price = v.Price,

@@ -7,6 +7,9 @@ public class SkuListItemResponse
     public string? Slug { get; set; }      // Add slug for building group URLs
     public string GroupName { get; set; } = null!;
     public string MainCategory { get; set; } = null!;
+    public string CategorySlug { get; set; } = null!;
+    public string SubcategoryName { get; set; } = null!;
+    public string SubcategorySlug { get; set; } = null!;
     public string Color { get; set; } = null!;
     public string Size { get; set; } = null!;
     public decimal Price { get; set; }

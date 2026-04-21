@@ -14,21 +14,13 @@ namespace HomeBuddy_API.Controllers.Admin;
 [Authorize(Roles = "Admin")]
 public class VariantsAdminController : ControllerBase
 {
-    private static IActionResult Gone() =>
-        new ObjectResult("Catalogue admin is no longer hosted in HomeBuddy_API. Use the standalone catalogue service instead.")
-        {
-            StatusCode = StatusCodes.Status410Gone
-        };
-
     private readonly ApplicationDbContext _db;
 
     public VariantsAdminController(ApplicationDbContext db) { _db = db; }
 
     [HttpGet("by-group/{groupId:guid}")]
-    public async Task<IActionResult> ByGroup(Guid groupId, int page, CancellationToken ct)
+    public async Task<IActionResult> ByGroup(Guid groupId, int page = 1, CancellationToken ct = default)
     {
-        return Gone();
-
         var v = await _db.Variants
             .Where(x => x.ProductGroupId == groupId)
             .Select(x => new VariantDto
@@ -39,6 +31,7 @@ public class VariantsAdminController : ControllerBase
                 Size = x.Size,
                 Price = x.Price,
                 InventoryQuantity = x.Inventory.Quantity,
+                LowStockThreshold = x.Inventory.LowStockThreshold,
                 LastRestockDate = x.Inventory.LastRestockDate,
                 Description = x.Description,
                 Brand = x.Brand,
@@ -53,16 +46,17 @@ public class VariantsAdminController : ControllerBase
     [HttpGet("by-group/count")]
     public async Task<IActionResult> CountByGroup(Guid groupId, CancellationToken ct)
     {
-        return Gone();
-
         var count = await _db.Variants.CountAsync(x => x.ProductGroupId == groupId, ct);
-        return Ok(new { Count = count });
+        return Ok(new { count });
     }
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateVariantRequest req, CancellationToken ct)
     {
-        return Gone();
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        req.Sku = req.Sku.Trim();
+        req.Color = req.Color.Trim();
+        req.Size = req.Size.Trim();
 
         var group = await _db.ProductGroups.FindAsync(new object?[] { req.ProductGroupId }, ct);
         if (group == null) return BadRequest("Group not found.");
@@ -94,6 +88,7 @@ public class VariantsAdminController : ControllerBase
             Size = v.Size,
             Price = v.Price,
             InventoryQuantity = 0,
+            LowStockThreshold = 0,
             LastRestockDate = null,
             Description = v.Description,
             Brand = v.Brand,
@@ -106,7 +101,7 @@ public class VariantsAdminController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateVariantRequest req, CancellationToken ct)
     {
-        return Gone();
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
         var v = await _db.Variants.FindAsync(new object?[] { id }, ct);
         if (v == null) return NotFound();
@@ -123,8 +118,6 @@ public class VariantsAdminController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        return Gone();
-
         var exists = await _db.Variants.AnyAsync(x => x.Id == id, ct);
         if (!exists) return NotFound();
 
@@ -143,8 +136,6 @@ public class VariantsAdminController : ControllerBase
     [HttpPost("{id:guid}/inventory/adjust")]
     public async Task<IActionResult> AdjustInventory(Guid id, [FromBody] AdjustInventoryRequest req, CancellationToken ct)
     {
-        return Gone();
-
         var v = await _db.Variants.Include(x => x.Inventory).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (v == null) return NotFound();
 

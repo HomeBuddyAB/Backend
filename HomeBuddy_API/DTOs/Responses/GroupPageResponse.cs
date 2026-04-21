@@ -7,6 +7,9 @@ public class GroupPageResponse
     public string? Slug { get; set; }      
     public string Name { get; set; } = null!;
     public string MainCategory { get; set; } = null!;
+    public string MainCategorySlug { get; set; } = null!;
+    public string Subcategory { get; set; } = null!;
+    public string SubcategorySlug { get; set; } = null!;
     public string? HeroImageUrl { get; set; }
     public decimal MinPrice { get; set; }
     public decimal MaxPrice { get; set; }

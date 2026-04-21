@@ -11,12 +11,6 @@ namespace HomeBuddy_API.Controllers.Admin;
 [Authorize(Roles = "Admin")]
 public class VariantImagesAdminController : ControllerBase
 {
-    private static IActionResult Gone() =>
-        new ObjectResult("Catalogue admin is no longer hosted in HomeBuddy_API. Use the standalone catalogue service instead.")
-        {
-            StatusCode = StatusCodes.Status410Gone
-        };
-
     private readonly ApplicationDbContext _db;
 
     public VariantImagesAdminController(ApplicationDbContext db) { _db = db; }
@@ -24,8 +18,6 @@ public class VariantImagesAdminController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetImages(Guid variantId, CancellationToken ct)
     {
-        return Gone();
-
         var images = await _db.VariantImages
             .Where(i => i.VariantId == variantId)
             .OrderBy(i => i.SortOrder)
@@ -36,8 +28,6 @@ public class VariantImagesAdminController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> AddImage(Guid variantId, [FromBody] AddVariantImageRequest req, CancellationToken ct)
     {
-        return Gone();
-
         var variant = await _db.Variants.FindAsync(new object?[] { variantId }, ct);
         if (variant == null) return NotFound("Variant not found");
 
@@ -58,8 +48,6 @@ public class VariantImagesAdminController : ControllerBase
     [HttpPut("{imageId:guid}")]
     public async Task<IActionResult> UpdateImage(Guid variantId, Guid imageId, [FromBody] UpdateVariantImageRequest req, CancellationToken ct)
     {
-        return Gone();
-
         var image = await _db.VariantImages
             .FirstOrDefaultAsync(i => i.Id == imageId && i.VariantId == variantId, ct);
         if (image == null) return NotFound();
@@ -76,8 +64,6 @@ public class VariantImagesAdminController : ControllerBase
     [HttpDelete("{imageId:guid}")]
     public async Task<IActionResult> DeleteImage(Guid variantId, Guid imageId, CancellationToken ct)
     {
-        return Gone();
-
         var image = await _db.VariantImages
             .FirstOrDefaultAsync(i => i.Id == imageId && i.VariantId == variantId, ct);
         if (image == null) return NotFound();

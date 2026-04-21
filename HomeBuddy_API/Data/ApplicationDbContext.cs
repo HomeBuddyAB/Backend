@@ -57,6 +57,16 @@ namespace HomeBuddy_API.Data
             modelBuilder.Entity<ProductGroup>()
                 .HasIndex(g => g.ObjectId).IsUnique();
 
+            modelBuilder.Entity<Category>(b =>
+            {
+                b.HasIndex(c => c.Slug).IsUnique();
+
+                b.HasOne(c => c.ParentCategory)
+                    .WithMany(c => c.Subcategories)
+                    .HasForeignKey(c => c.ParentCategoryId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
             modelBuilder.Entity<ProductGroup>()
                 .HasOne(g => g.Category)
                 .WithMany(c => c.ProductGroups)

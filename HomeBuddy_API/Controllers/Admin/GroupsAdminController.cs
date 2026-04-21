@@ -15,12 +15,6 @@ namespace HomeBuddy_API.Controllers.Admin
     [Authorize(Roles = "Admin")]
     public class GroupsAdminController : ControllerBase
     {
-        private static IActionResult Gone() =>
-            new ObjectResult("Catalogue admin is no longer hosted in HomeBuddy_API. Use the standalone catalogue service instead.")
-            {
-                StatusCode = StatusCodes.Status410Gone
-            };
-
         private readonly ApplicationDbContext _db;
 
         public GroupsAdminController(ApplicationDbContext db)
@@ -31,9 +25,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpGet]
         public async Task<IActionResult> GetAll(int page = 1, CancellationToken ct = default)
         {
-            return Gone();
-
-            // Use Paginate extension to limit results
             var groups = await _db.ProductGroups
                 .Include(g => g.Category)
                 .Paginate(page)
@@ -60,8 +51,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpGet("count")]
         public async Task<IActionResult> GetCount(CancellationToken ct = default)
         {
-            return Gone();
-
             var count = await _db.ProductGroups.CountAsync(ct);
             return Ok(new { count });
         }
@@ -69,7 +58,9 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateGroupRequest req, CancellationToken ct = default)
         {
-            return Gone();
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
+            req.Name = req.Name.Trim();
+            req.ObjectId = req.ObjectId.Trim();
 
             if (await _db.ProductGroups.AnyAsync(g => g.ObjectId == req.ObjectId, ct))
                 return Conflict("ObjectId already exists.");
@@ -82,7 +73,9 @@ namespace HomeBuddy_API.Controllers.Admin
                 ObjectId = req.ObjectId,
                 Name = req.Name,
                 CategoryId = req.CategoryId,
-                Slug = GenerateSlug(req.Name)
+                Slug = GenerateSlug(req.Name),
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
             };
 
             _db.ProductGroups.Add(group);
@@ -108,7 +101,7 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupRequest req, CancellationToken ct = default)
         {
-            return Gone();
+            if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
             var group = await _db.ProductGroups.FindAsync(new object?[] { id }, ct);
             if (group == null) return NotFound();
@@ -125,8 +118,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
-            return Gone();
-
             var exists = await _db.ProductGroups.AnyAsync(g => g.Id == id, ct);
             if (!exists) return NotFound();
 
@@ -154,8 +145,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpPost("{id:guid}/discount")]
         public async Task<IActionResult> ApplyDiscount(Guid id, [FromBody] ApplyGroupDiscountRequest req, CancellationToken ct = default)
         {
-            return Gone();
-
             if (req.DiscountPercent < 1 || req.DiscountPercent > 99)
                 return BadRequest("DiscountPercent must be between 1 and 99.");
 
@@ -169,7 +158,8 @@ namespace HomeBuddy_API.Controllers.Admin
             var multiplier = 1m - (req.DiscountPercent / 100m);
             foreach (var v in variants)
             {
-                v.ListPrice = v.Price;
+                if (!v.ListPrice.HasValue || v.ListPrice.Value <= 0m)
+                    v.ListPrice = v.Price;
                 v.Price = Math.Round(v.Price * multiplier, 2);
             }
 
@@ -183,8 +173,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpPost("{id:guid}/discount/remove")]
         public async Task<IActionResult> RemoveDiscount(Guid id, CancellationToken ct = default)
         {
-            return Gone();
-
             var group = await _db.ProductGroups.FindAsync(new object?[] { id }, ct);
             if (group == null) return NotFound();
 
@@ -193,7 +181,11 @@ namespace HomeBuddy_API.Controllers.Admin
                 .ToListAsync(ct);
 
             foreach (var v in variants)
+            {
+                if (v.ListPrice.HasValue && v.ListPrice.Value > 0m)
+                    v.Price = v.ListPrice.Value;
                 v.ListPrice = null;
+            }
 
             await _db.SaveChangesAsync(ct);
             return NoContent();

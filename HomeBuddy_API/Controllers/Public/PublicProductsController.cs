@@ -1,6 +1,7 @@
-
+using HomeBuddy_API.Data;
 using HomeBuddy_API.DTOs.Requests;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HomeBuddy_API.Controllers.Public;
 
@@ -8,13 +9,13 @@ namespace HomeBuddy_API.Controllers.Public;
 [Route("api/products")]
 public class PublicProductsController : ControllerBase
 {
-    private readonly IConfiguration _config;
-    private readonly IHttpClientFactory _httpFactory;
+    private readonly ApplicationDbContext _db;
+    private readonly LinkGenerator _links;
 
-    public PublicProductsController(IConfiguration config, IHttpClientFactory httpFactory)
+    public PublicProductsController(ApplicationDbContext db, LinkGenerator links)
     {
-        _config = config;
-        _httpFactory = httpFactory;
+        _db = db;
+        _links = links;
     }
 
     // SKU-first listing (returns paged body with totalCount for UI pagination)
@@ -22,29 +23,116 @@ public class PublicProductsController : ControllerBase
     [ProducesResponseType(typeof(DTOs.Responses.ProductListPageResponse), 200)]
     public async Task<IActionResult> List([FromQuery] PublicListQuery q, CancellationToken ct)
     {
-        var catalogueBase = _config["Catalogue:BaseUrl"];
-        if (string.IsNullOrWhiteSpace(catalogueBase))
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Catalogue:BaseUrl is not configured.");
+        var variants = _db.Variants
+            .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category).ThenInclude(c => c.ParentCategory)
+            .Include(v => v.Inventory)
+            .Include(v => v.VariantImages)
+            .Where(v => !v.IsDeleted && !v.ProductGroup.IsDeleted);
 
-        var client = _httpFactory.CreateClient("catalogue");
-        client.BaseAddress = new Uri(catalogueBase);
-
-        var apiKey = _config["Catalogue:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        if (!string.IsNullOrWhiteSpace(q.Search))
         {
-            client.DefaultRequestHeaders.Remove("X-Api-Key");
-            client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+            var term = q.Search.Trim().ToLower();
+            variants = variants.Where(v =>
+                (v.ProductGroup.Name != null && v.ProductGroup.Name.ToLower().Contains(term)) ||
+                (v.ProductGroup.Category != null && v.ProductGroup.Category.Name != null && v.ProductGroup.Category.Name.ToLower().Contains(term)) ||
+                (v.ProductGroup.Slug != null && v.ProductGroup.Slug.ToLower().Contains(term)) ||
+                (v.Sku != null && v.Sku.ToLower().Contains(term)) ||
+                (v.Color != null && v.Color.ToLower().Contains(term)));
         }
 
-        var qs = HttpContext.Request.QueryString.HasValue ? HttpContext.Request.QueryString.Value : string.Empty;
-        var res = await client.GetAsync($"/api/products{qs}", ct);
-        var body = await res.Content.ReadAsStringAsync(ct);
-        return new ContentResult
+        if (!string.IsNullOrWhiteSpace(q.ParentCategorySlug))
+            variants = variants.Where(v =>
+                v.ProductGroup.Category.ParentCategory != null &&
+                v.ProductGroup.Category.ParentCategory.Slug == q.ParentCategorySlug);
+
+        if (!string.IsNullOrWhiteSpace(q.SubcategorySlug))
+            variants = variants.Where(v => v.ProductGroup.Category.Slug == q.SubcategorySlug);
+
+        if (!string.IsNullOrWhiteSpace(q.CategorySlug))
+            variants = variants.Where(v => v.ProductGroup.Category.Slug == q.CategorySlug);
+
+        if (!string.IsNullOrWhiteSpace(q.Color))
+            variants = variants.Where(v => v.Color == q.Color);
+
+        if (!string.IsNullOrWhiteSpace(q.Size))
+            variants = variants.Where(v => v.Size == q.Size);
+
+        if (q.MinPrice.HasValue) variants = variants.Where(v => v.Price >= q.MinPrice.Value);
+        if (q.MaxPrice.HasValue) variants = variants.Where(v => v.Price <= q.MaxPrice.Value);
+
+        // Sort
+        var dir = (q.Dir ?? "asc").ToLower() == "desc" ? -1 : 1;
+        variants = (q.Sort ?? "price").ToLower() switch
         {
-            StatusCode = (int)res.StatusCode,
-            ContentType = res.Content.Headers.ContentType?.ToString() ?? "application/json",
-            Content = body
+            "size" => dir == 1 ? variants.OrderBy(v => v.Size) : variants.OrderByDescending(v => v.Size),
+            "color" => dir == 1 ? variants.OrderBy(v => v.Color) : variants.OrderByDescending(v => v.Color),
+            _ => dir == 1 ? variants.OrderBy(v => v.Price) : variants.OrderByDescending(v => v.Price),
         };
+
+        var page = Math.Max(1, q.Page);
+        var pageSize = Math.Clamp(q.PageSize, 1, 100);
+
+        var total = await variants.CountAsync(ct);
+        var items = await variants
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        // Replace the method signature and return type of ResolvePrimary to ensure it never returns null.
+        string ResolvePrimary(HomeBuddy_API.Models.Variant v)
+        {
+            var skuPrimary = v.VariantImages.Where(i => i.IsPrimary).OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault();
+            if (!string.IsNullOrEmpty(skuPrimary)) return skuPrimary;
+            var colorPrimary = _db.ColorImages.Where(ci => ci.ProductGroupId == v.ProductGroupId && ci.Color == v.Color && ci.IsPrimary)
+                                              .OrderBy(ci => ci.SortOrder).Select(ci => ci.Url).FirstOrDefault();
+            return colorPrimary ?? string.Empty;
+        }
+
+        var responses = new List<DTOs.Responses.SkuListItemResponse>();
+        foreach (var v in items)
+        {
+            var primary = ResolvePrimary(v);
+            var slugOrObject = string.IsNullOrWhiteSpace(v.ProductGroup.Slug) ? v.ProductGroup.ObjectId : v.ProductGroup.Slug!;
+            var groupPath = $"/groups/{slugOrObject}?sku={Uri.EscapeDataString(v.Sku)}";
+            var siblingsCount = await _db.Variants.CountAsync(x => x.ProductGroupId == v.ProductGroupId && !x.IsDeleted && x.Sku != v.Sku, ct);
+
+            var parentCategory = v.ProductGroup.Category.ParentCategory;
+            var mainCategory = parentCategory?.Name ?? v.ProductGroup.Category.Name;
+            var mainCategorySlug = parentCategory?.Slug ?? v.ProductGroup.Category.Slug;
+
+            responses.Add(new DTOs.Responses.SkuListItemResponse
+            {
+                Id = v.Id,
+                Sku = v.Sku,
+                ObjectId = v.ProductGroup.ObjectId,
+                Slug = v.ProductGroup.Slug,
+                GroupName = v.ProductGroup.Name,
+                MainCategory = mainCategory,
+                CategorySlug = mainCategorySlug,
+                SubcategoryName = v.ProductGroup.Category.Name,
+                SubcategorySlug = v.ProductGroup.Category.Slug,
+                Color = v.Color,
+                Size = v.Size,
+                Price = v.Price,
+                ListPrice = v.ListPrice,
+                InStock = v.Inventory.Quantity > 0,
+                PrimaryImageUrl = primary,
+                GroupLink = groupPath,
+                MoreVariantsCount = Math.Max(0, siblingsCount)
+            });
+        }
+
+        var totalPages = (int)Math.Ceiling(total / (double)pageSize);
+        var result = new DTOs.Responses.ProductListPageResponse
+        {
+            Items = responses,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
+        };
+        Response.Headers["X-Total-Count"] = total.ToString();
+        return Ok(result);
     }
 
     /// <summary>
@@ -55,28 +143,104 @@ public class PublicProductsController : ControllerBase
     [ProducesResponseType(typeof(DTOs.Responses.ProductListPageResponse), 200)]
     public async Task<IActionResult> Deals([FromQuery] PublicListQuery q, CancellationToken ct)
     {
-        var catalogueBase = _config["Catalogue:BaseUrl"];
-        if (string.IsNullOrWhiteSpace(catalogueBase))
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Catalogue:BaseUrl is not configured.");
+        var variants = _db.Variants
+            .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category).ThenInclude(c => c.ParentCategory)
+            .Include(v => v.Inventory)
+            .Include(v => v.VariantImages)
+            .Where(v =>
+                !v.IsDeleted &&
+                !v.ProductGroup.IsDeleted &&
+                v.ListPrice.HasValue &&
+                v.ListPrice.Value > v.Price &&
+                v.Inventory.Quantity > 0);
 
-        var client = _httpFactory.CreateClient("catalogue");
-        client.BaseAddress = new Uri(catalogueBase);
+        // Optional extra filters (category, search, etc.) can still be applied
+        if (!string.IsNullOrWhiteSpace(q.ParentCategorySlug))
+            variants = variants.Where(v =>
+                v.ProductGroup.Category.ParentCategory != null &&
+                v.ProductGroup.Category.ParentCategory.Slug == q.ParentCategorySlug);
 
-        var apiKey = _config["Catalogue:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        if (!string.IsNullOrWhiteSpace(q.SubcategorySlug))
+            variants = variants.Where(v => v.ProductGroup.Category.Slug == q.SubcategorySlug);
+
+        if (!string.IsNullOrWhiteSpace(q.CategorySlug))
+            variants = variants.Where(v => v.ProductGroup.Category.Slug == q.CategorySlug);
+
+        if (!string.IsNullOrWhiteSpace(q.Search))
         {
-            client.DefaultRequestHeaders.Remove("X-Api-Key");
-            client.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+            var term = q.Search.Trim().ToLower();
+            variants = variants.Where(v =>
+                (v.ProductGroup.Name != null && v.ProductGroup.Name.ToLower().Contains(term)) ||
+                (v.Sku != null && v.Sku.ToLower().Contains(term)));
         }
 
-        var qs = HttpContext.Request.QueryString.HasValue ? HttpContext.Request.QueryString.Value : string.Empty;
-        var res = await client.GetAsync($"/api/products/deals{qs}", ct);
-        var body = await res.Content.ReadAsStringAsync(ct);
-        return new ContentResult
+        // Sort by relative discount descending, then by price
+        variants = variants
+            .OrderByDescending(v => (v.ListPrice!.Value - v.Price) / v.ListPrice!.Value)
+            .ThenBy(v => v.Price);
+
+        var page = Math.Max(1, q.Page);
+        var pageSize = Math.Clamp(q.PageSize, 1, 100);
+
+        var total = await variants.CountAsync(ct);
+        var items = await variants
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        string ResolvePrimary(HomeBuddy_API.Models.Variant v)
         {
-            StatusCode = (int)res.StatusCode,
-            ContentType = res.Content.Headers.ContentType?.ToString() ?? "application/json",
-            Content = body
+            var skuPrimary = v.VariantImages.Where(i => i.IsPrimary).OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault();
+            if (!string.IsNullOrEmpty(skuPrimary)) return skuPrimary;
+            var colorPrimary = _db.ColorImages.Where(ci => ci.ProductGroupId == v.ProductGroupId && ci.Color == v.Color && ci.IsPrimary)
+                                              .OrderBy(ci => ci.SortOrder).Select(ci => ci.Url).FirstOrDefault();
+            return colorPrimary ?? string.Empty;
+        }
+
+        var responses = new List<DTOs.Responses.SkuListItemResponse>();
+        foreach (var v in items)
+        {
+            var primary = ResolvePrimary(v);
+            var slugOrObject = string.IsNullOrWhiteSpace(v.ProductGroup.Slug) ? v.ProductGroup.ObjectId : v.ProductGroup.Slug!;
+            var groupPath = $"/groups/{slugOrObject}?sku={Uri.EscapeDataString(v.Sku)}";
+            var siblingsCount = await _db.Variants.CountAsync(x => x.ProductGroupId == v.ProductGroupId && !x.IsDeleted && x.Sku != v.Sku, ct);
+
+            var parentCategory = v.ProductGroup.Category.ParentCategory;
+            var mainCategory = parentCategory?.Name ?? v.ProductGroup.Category.Name;
+            var mainCategorySlug = parentCategory?.Slug ?? v.ProductGroup.Category.Slug;
+
+            responses.Add(new DTOs.Responses.SkuListItemResponse
+            {
+                Id = v.Id,
+                Sku = v.Sku,
+                ObjectId = v.ProductGroup.ObjectId,
+                Slug = v.ProductGroup.Slug,
+                GroupName = v.ProductGroup.Name,
+                MainCategory = mainCategory,
+                CategorySlug = mainCategorySlug,
+                SubcategoryName = v.ProductGroup.Category.Name,
+                SubcategorySlug = v.ProductGroup.Category.Slug,
+                Color = v.Color,
+                Size = v.Size,
+                Price = v.Price,
+                ListPrice = v.ListPrice,
+                InStock = v.Inventory.Quantity > 0,
+                PrimaryImageUrl = primary,
+                GroupLink = groupPath,
+                MoreVariantsCount = Math.Max(0, siblingsCount)
+            });
+        }
+
+        var totalPages = (int)Math.Ceiling(total / (double)pageSize);
+        var result = new DTOs.Responses.ProductListPageResponse
+        {
+            Items = responses,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
         };
+        Response.Headers["X-Total-Count"] = total.ToString();
+        return Ok(result);
     }
 }

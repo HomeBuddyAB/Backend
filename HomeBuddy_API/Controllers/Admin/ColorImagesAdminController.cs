@@ -15,12 +15,6 @@ namespace HomeBuddy_API.Controllers.Admin
     [Authorize(Roles = "Admin")]
     public class ColorImagesAdminController : ControllerBase
     {
-        private static IActionResult Gone() =>
-            new ObjectResult("Catalogue admin is no longer hosted in HomeBuddy_API. Use the standalone catalogue service instead.")
-            {
-                StatusCode = StatusCodes.Status410Gone
-            };
-
         private readonly ApplicationDbContext _db;
 
         public ColorImagesAdminController(ApplicationDbContext db) { _db = db; }
@@ -28,8 +22,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpGet]
         public async Task<IActionResult> GetImages(Guid groupId, [FromQuery] string? color, CancellationToken ct)
         {
-            return Gone();
-
             var query = _db.ColorImages.Where(i => i.ProductGroupId == groupId);
 
             if (!string.IsNullOrWhiteSpace(color))
@@ -42,8 +34,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpPost]
         public async Task<IActionResult> AddImage(Guid groupId, [FromBody] AddColorImageRequest req, CancellationToken ct)
         {
-            return Gone();
-
             var group = await _db.ProductGroups.FindAsync(new object?[] { groupId }, ct);
             if (group == null) return NotFound("ProductGroup not found");
 
@@ -65,8 +55,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpPut("{imageId:guid}")]
         public async Task<IActionResult> UpdateImage(Guid groupId, Guid imageId, [FromBody] UpdateColorImageRequest req, CancellationToken ct)
         {
-            return Gone();
-
             var image = await _db.ColorImages
                 .FirstOrDefaultAsync(i => i.Id == imageId && i.ProductGroupId == groupId, ct);
 
@@ -84,8 +72,6 @@ namespace HomeBuddy_API.Controllers.Admin
         [HttpDelete("{imageId:guid}")]
         public async Task<IActionResult> DeleteImage(Guid groupId, Guid imageId, CancellationToken ct)
         {
-            return Gone();
-
             var image = await _db.ColorImages
                 .FirstOrDefaultAsync(i => i.Id == imageId && i.ProductGroupId == groupId, ct);
 
