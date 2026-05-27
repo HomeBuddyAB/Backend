@@ -24,6 +24,24 @@ namespace HomeBuddy_API.Models
 
         public bool IsDeleted { get; set; } = false;
 
+        public PublishStatus PublishStatus { get; set; } = PublishStatus.Published;
+
+        [MaxLength(500)]
+        public string? RawCategoryHint { get; set; }
+
+        [MaxLength(200)]
+        public string? ImportSource { get; set; }
+
+        public bool IsOrphaned { get; set; } = false;
+        public DateTimeOffset? OrphanedAt { get; set; }
+
+        /// <summary>
+        /// Published items hidden from the storefront while the supplier feed is down.
+        /// Cleared automatically when the product reappears in a successful import.
+        /// </summary>
+        public bool IsFeedSuspended { get; set; } = false;
+        public DateTimeOffset? FeedSuspendedAt { get; set; }
+
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 

@@ -27,7 +27,9 @@ public class PublicProductsController : ControllerBase
             .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category).ThenInclude(c => c.ParentCategory)
             .Include(v => v.Inventory)
             .Include(v => v.VariantImages)
-            .Where(v => !v.IsDeleted && !v.ProductGroup.IsDeleted);
+            .Where(v => !v.IsDeleted && !v.ProductGroup.IsDeleted
+                && v.ProductGroup.PublishStatus == Models.PublishStatus.Published
+                && !v.ProductGroup.IsFeedSuspended);
 
         if (!string.IsNullOrWhiteSpace(q.Search))
         {
@@ -150,6 +152,8 @@ public class PublicProductsController : ControllerBase
             .Where(v =>
                 !v.IsDeleted &&
                 !v.ProductGroup.IsDeleted &&
+                v.ProductGroup.PublishStatus == Models.PublishStatus.Published &&
+                !v.ProductGroup.IsFeedSuspended &&
                 v.ListPrice.HasValue &&
                 v.ListPrice.Value > v.Price &&
                 v.Inventory.Quantity > 0);

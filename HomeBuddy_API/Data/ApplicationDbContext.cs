@@ -26,6 +26,8 @@ namespace HomeBuddy_API.Data
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; } = default!;
         public DbSet<ColorImage> ColorImages => Set<ColorImage>();
         public DbSet<VariantImage> VariantImages => Set<VariantImage>();
+        public DbSet<CategoryMapping> CategoryMappings => Set<CategoryMapping>();
+        public DbSet<ImportLog> ImportLogs => Set<ImportLog>();
         public DbSet<SavedCustomer> SavedCustomers { get; set; } = default!;
         public DbSet<UserFavorite> UserFavorites { get; set; } = default!;
         public DbSet<PasswordResetToken> PasswordResetTokens { get; set; } = default!;
@@ -54,8 +56,28 @@ namespace HomeBuddy_API.Data
                  .HasDatabaseName("IX_Variant_Sku");
             });
 
-            modelBuilder.Entity<ProductGroup>()
-                .HasIndex(g => g.ObjectId).IsUnique();
+            modelBuilder.Entity<ProductGroup>(b =>
+            {
+                b.HasIndex(g => g.ObjectId).IsUnique();
+
+                b.Property(g => g.PublishStatus)
+                 .HasConversion<string>()
+                 .HasMaxLength(20)
+                 .HasDefaultValue(PublishStatus.Published)
+                 .HasSentinel(PublishStatus.Published);
+            });
+
+            modelBuilder.Entity<CategoryMapping>(b =>
+            {
+                b.HasOne(m => m.Subcategory)
+                 .WithMany()
+                 .HasForeignKey(m => m.SubcategoryId)
+                 .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasIndex(m => new { m.SupplierTerm, m.SupplierSource })
+                 .IsUnique()
+                 .HasDatabaseName("IX_CategoryMapping_Term_Source");
+            });
 
             modelBuilder.Entity<Category>(b =>
             {

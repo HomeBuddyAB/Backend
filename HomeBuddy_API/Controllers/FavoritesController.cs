@@ -58,7 +58,9 @@ namespace HomeBuddy_API.Controllers
                 .Include(v => v.ProductGroup).ThenInclude(pg => pg.Category).ThenInclude(c => c.ParentCategory)
                 .Include(v => v.Inventory)
                 .Include(v => v.VariantImages)
-                .Where(v => favoriteVariantIds.Contains(v.Id) && !v.IsDeleted && !v.ProductGroup.IsDeleted)
+                .Where(v => favoriteVariantIds.Contains(v.Id) && !v.IsDeleted && !v.ProductGroup.IsDeleted
+                    && v.ProductGroup.PublishStatus == Models.PublishStatus.Published
+                    && !v.ProductGroup.IsFeedSuspended)
                 .OrderByDescending(v => v.ProductGroup.UpdatedAt)
                 .ToListAsync(ct);
 

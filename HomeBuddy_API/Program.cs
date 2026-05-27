@@ -13,6 +13,7 @@ using HomeBuddy_API.Interfaces.UserInterfaces;
 using HomeBuddy_API.Interfaces.EmailInterfaces;
 using HomeBuddy_API.Repositories;
 using HomeBuddy_API.Services;
+using HomeBuddy_API.Services.Import;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics;
@@ -98,6 +99,12 @@ namespace HomeBuddy_API
 
                 // External catalogue client (TestApi / real provider)
                 builder.Services.AddHttpClient("catalogue");
+
+                // Catalogue import (manual admin + scheduled background)
+                builder.Services.Configure<CatalogueImportScheduleOptions>(
+                    builder.Configuration.GetSection(CatalogueImportScheduleOptions.SectionName));
+                builder.Services.AddSingleton<ICatalogueImportService, CatalogueImportService>();
+                builder.Services.AddHostedService<ScheduledCatalogueImportHostedService>();
 
                 // Application Insights telemetry (enabled only when connection string is configured)
                 var appInsightsConnectionString = builder.Configuration["ApplicationInsights:ConnectionString"];

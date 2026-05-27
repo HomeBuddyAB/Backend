@@ -4,6 +4,7 @@ using HomeBuddy_API.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HomeBuddy_API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260527005215_AddPublishStatusAndCategoryMapping")]
+    partial class AddPublishStatusAndCategoryMapping
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -146,69 +149,6 @@ namespace HomeBuddy_API.Migrations
                     b.HasIndex("ProductGroupId");
 
                     b.ToTable("ColorImages");
-                });
-
-            modelBuilder.Entity("HomeBuddy_API.Models.ImportLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("AutoCategorized")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset?>("CompletedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<long>("DurationMs")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<int>("ItemsSkipped")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ItemsStaged")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ItemsUpdated")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Orphaned")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Reappeared")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("TriggeredBy")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<int>("Uncategorized")
-                        .HasColumnType("int");
-
-                    b.Property<int>("WarningCount")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ImportLogs");
                 });
 
             modelBuilder.Entity("HomeBuddy_API.Models.Inventory", b =>
@@ -475,20 +415,11 @@ namespace HomeBuddy_API.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<DateTimeOffset?>("FeedSuspendedAt")
-                        .HasColumnType("datetimeoffset");
-
                     b.Property<string>("ImportSource")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsFeedSuspended")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsOrphaned")
                         .HasColumnType("bit");
 
                     b.Property<string>("Name")
@@ -500,9 +431,6 @@ namespace HomeBuddy_API.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTimeOffset?>("OrphanedAt")
-                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("PublishStatus")
                         .IsRequired()

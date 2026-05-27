@@ -54,6 +54,13 @@ public static class SeedData
             db.SaveChanges();
         }
 
+        // Ensure the system "Uncategorized" bucket always exists
+        if (!db.Categories.Any(c => c.Slug == "uncategorized"))
+        {
+            db.Categories.Add(new Category { Name = "Uncategorized", Slug = "uncategorized" });
+            db.SaveChanges();
+        }
+
     }
     private static void CreatePasswordHash(string password, out string hash, out string salt)
     {

@@ -28,6 +28,8 @@ public class PublicGroupsController : ControllerBase
             .ThenInclude(c => c.ParentCategory)
             .FirstOrDefaultAsync(g =>
                 !g.IsDeleted &&
+                g.PublishStatus == Models.PublishStatus.Published &&
+                !g.IsFeedSuspended &&
                 (g.ObjectId == idOrSlug || (g.Slug != null && g.Slug == idOrSlug)),
                 ct);
 
@@ -130,6 +132,7 @@ public class PublicGroupsController : ControllerBase
                 Color = v.Color,
                 Size = v.Size,
                 Price = v.Price,
+                ListPrice = v.ListPrice,
                 InStock = v.Inventory.Quantity > 0,
                 PrimaryImageUrl = PrimaryUrl(v),
                 Description = v.Description,
